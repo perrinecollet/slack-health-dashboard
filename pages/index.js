@@ -17,7 +17,9 @@ function KpiCard({ icon, label, value, sub, color = "#6366f1" }) {
 
 function Badge({ ok, label }) {
   return (
-    <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 6px", borderRadius: 20, background: ok ? "#14532d" : "#450a0a", color: ok ? "#4ade80" : "#f87171", border: `1px solid ${ok ? "#166534" : "#7f1d1d"}` }}>
+    <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 6px", borderRadius: 20,
+      background: ok ? "#14532d" : "#450a0a", color: ok ? "#4ade80" : "#f87171",
+      border: `1px solid ${ok ? "#166534" : "#7f1d1d"}` }}>
       {label}
     </span>
   );
@@ -35,7 +37,6 @@ function Spinner() {
   return <div style={{ display: "inline-block", width: 16, height: 16, border: "2px solid #6366f1", borderTopColor: "transparent", borderRadius: "50%", animation: "spin 0.7s linear infinite" }} />;
 }
 
-// KPI cell for the people table
 function KpiCell({ value, label, color, active }) {
   return (
     <div style={{ textAlign: "center", minWidth: 80, padding: "4px 8px", borderRadius: 8, background: active ? "#2d2d44" : "transparent" }}>
@@ -45,14 +46,24 @@ function KpiCell({ value, label, color, active }) {
   );
 }
 
-const SORT_OPTIONS = [
-  { key: "mentions3m",      label: "# Mentions",               color: "#a78bfa" },
-  { key: "msgSent",         label: "# Messages envoyés",       color: "#22d3ee" },
-  { key: "threadPct",       label: "% Thread (publics)",       color: "#f472b6" },
-  { key: "pubPct",          label: "% Public vs Private",      color: "#22c55e" },
-  { key: "reactionsGiven",  label: "Réactions envoyées",       color: "#f59e0b" },
-  { key: "reactionsReceived", label: "Réactions reçues",       color: "#fb923c" },
+const PEOPLE_SORT = [
+  { key: "mentions3m",       label: "# Mentions",          color: "#a78bfa" },
+  { key: "msgSent",          label: "# Messages envoyés",  color: "#22d3ee" },
+  { key: "threadPct",        label: "% Thread (publics)",  color: "#f472b6" },
+  { key: "pubPct",           label: "% Public vs Private", color: "#22c55e" },
+  { key: "reactionsGiven",   label: "Réactions envoyées",  color: "#f59e0b" },
+  { key: "reactionsReceived",label: "Réactions reçues",    color: "#fb923c" },
 ];
+
+// Sort arrow button
+function SortBtn({ label, sortKey, current, dir, onClick }) {
+  const active = current === sortKey;
+  return (
+    <span onClick={() => onClick(sortKey)} style={{ cursor: "pointer", fontSize: 10, color: active ? "#a78bfa" : "#6b6b8a", fontWeight: active ? 700 : 400, userSelect: "none" }}>
+      {label} {active ? (dir === "asc" ? "▲" : "▼") : "⇅"}
+    </span>
+  );
+}
 
 export default function App() {
   const [tab, setTab] = useState("overview");
@@ -60,12 +71,19 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [actionLog, setActionLog] = useState([]);
-  const [expandedCh, setExpandedCh] = useState(null);
+
+  // Channels state
+  const [chTab, setChTab] = useState("all"); // all | noncompliant | dormant | temp
+  const [chSort, setChSort] = useState("lastActive");
+  const [chDir, setChDir] = useState("desc");
+  const [ncOwnerFilter, setNcOwnerFilter] = useState("all");
+
+  // People state
+  const [mbSort, setMbSort] = useState("mentions3m");
+
+  // Group DMs / User Groups
   const [expandedGdm, setExpandedGdm] = useState(null);
   const [expandedUg, setExpandedUg] = useState(null);
-  const [chFilter, setChFilter] = useState("all");
-  const [chSearch, setChSearch] = useState("");
-  const [mbSort, setMbSort] = useState("mentions3m");
 
   const addLog = (m) => setActionLog(p => [`[${new Date().toLocaleTimeString()}] ${m}`, ...p].slice(0, 30));
 
@@ -99,85 +117,165 @@ export default function App() {
     } catch { addLog(`❌ Erreur envoi message`); }
   };
 
-  if (loading && !data) {
-    return (
-      <div style={{ background: "#0d0d1a", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#e2e2f0", fontFamily: "Inter,sans-serif" }}>
-        <div style={{ textAlign: "center" }}>
-          <Spinner />
-          <div style={{ marginTop: 16, fontSize: 14, color: "#a0a0bf" }}>Connexion à Slack en cours…</div>
-          <div style={{ marginTop: 6, fontSize: 11, color: "#6b6b8a" }}>Récupération des channels, membres et statistiques (90 jours)</div>
-        </div>
-      </div>
-    );
-  }
+  if (loading && !data) return (
+    <div style={{ background: "#0d0d1a", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#e2e2f0", fontFamily: "Inter,sans-serif" }}>
+      <div style={{ textAlign: "center" }}><Spinner /><div style={{ marginTop: 16, fontSize: 14, color: "#a0a0bf" }}>Connexion à Slack…</div><div style={{ marginTop: 6, fontSize: 11, color: "#6b6b8a" }}>Récupération des channels, membres et stats (90 jours)</div></div>
+    </div>
+  );
 
-  if (error) {
-    return (
-      <div style={{ background: "#0d0d1a", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#e2e2f0", fontFamily: "Inter,sans-serif" }}>
-        <div style={{ textAlign: "center", maxWidth: 400 }}>
-          <div style={{ fontSize: 40, marginBottom: 16 }}>❌</div>
-          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Erreur de connexion Slack</div>
-          <div style={{ fontSize: 12, color: "#f87171", background: "#450a0a", padding: "8px 16px", borderRadius: 8, marginBottom: 16 }}>{error}</div>
-          <div style={{ fontSize: 12, color: "#6b6b8a", marginBottom: 16 }}>Vérifiez que la variable <code>SLACK_BOT_TOKEN</code> est bien configurée dans Vercel.</div>
-          <button onClick={fetchData} style={{ background: "#6366f1", border: "none", borderRadius: 8, padding: "8px 20px", color: "#fff", fontWeight: 600, cursor: "pointer" }}>Réessayer</button>
-        </div>
+  if (error) return (
+    <div style={{ background: "#0d0d1a", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#e2e2f0", fontFamily: "Inter,sans-serif" }}>
+      <div style={{ textAlign: "center", maxWidth: 400 }}>
+        <div style={{ fontSize: 40, marginBottom: 16 }}>❌</div>
+        <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Erreur de connexion Slack</div>
+        <div style={{ fontSize: 12, color: "#f87171", background: "#450a0a", padding: "8px 16px", borderRadius: 8, marginBottom: 16 }}>{error}</div>
+        <div style={{ fontSize: 12, color: "#6b6b8a", marginBottom: 16 }}>Vérifiez que <code>SLACK_BOT_TOKEN</code> est configuré dans Vercel.</div>
+        <button onClick={fetchData} style={{ background: "#6366f1", border: "none", borderRadius: 8, padding: "8px 20px", color: "#fff", fontWeight: 600, cursor: "pointer" }}>Réessayer</button>
       </div>
-    );
-  }
+    </div>
+  );
 
-  const channels = data?.channels || [];
+  const channels = (data?.channels || []).filter(c => !c.isPrivate); // public only
+  const allChannelsRaw = data?.channels || [];
   const people = data?.people || [];
   const groupDms = data?.groupDms || [];
   const groups = data?.groups || [];
 
   const total = channels.length;
-  const pub = channels.filter(c => !c.isPrivate).length;
-  const priv = channels.filter(c => c.isPrivate).length;
   const withDesc = channels.filter(c => c.hasDesc).length;
   const withTopic = channels.filter(c => c.hasTopic).length;
   const compliantAll = channels.filter(c => isCompliant(c) && c.hasDesc).length;
-  const dormant = channels.filter(c => c.lastActive > 90);
-  const tempDormant = dormant.filter(c => c.name.startsWith("temp"));
+  const dormantChs = channels.filter(c => c.lastActive > 90);
+  const tempDormant = dormantChs.filter(c => c.name.startsWith("temp"));
   const nonCompliantList = channels.filter(c => !isCompliant(c));
-  const helpSlackChannel = channels.find(c => c.name === "help-slack");
+  const helpSlackChannel = allChannelsRaw.find(c => c.name === "help-slack");
   const maxMentions = Math.max(...people.map(m => m.mentions3m), 1);
-  const maxUg = Math.max(...groups.map(g => g.mentions3m), 1);
   const maxGdm = Math.max(...groupDms.map(g => g.messages3m), 1);
+  const maxUg = Math.max(...groups.map(g => g.mentions3m), 1);
 
-  const filtered = channels.filter(c => {
-    const s = chSearch.toLowerCase();
-    if (s && !c.name.includes(s)) return false;
-    if (chFilter === "non-compliant") return !isCompliant(c);
-    if (chFilter === "dormant") return c.lastActive > 90;
-    if (chFilter === "private") return c.isPrivate;
-    if (chFilter === "temp") return c.name.startsWith("temp");
-    if (chFilter === "no-desc") return !c.hasDesc;
-    return true;
+  // People lookup by id
+  const peopleById = Object.fromEntries(people.map(p => [p.id, p]));
+
+  // ── Channel sorting helper
+  const sortChannels = (list, key, dir) => {
+    return [...list].sort((a, b) => {
+      let av = a[key] ?? 0, bv = b[key] ?? 0;
+      if (typeof av === "string") av = av.toLowerCase();
+      if (typeof bv === "string") bv = bv.toLowerCase();
+      if (av < bv) return dir === "asc" ? -1 : 1;
+      if (av > bv) return dir === "asc" ? 1 : -1;
+      return 0;
+    });
+  };
+
+  const toggleSort = (key) => {
+    if (chSort === key) setChDir(d => d === "asc" ? "desc" : "asc");
+    else { setChSort(key); setChDir("desc"); }
+  };
+
+  // ── Channel subsets
+  const pubChannels = channels; // already filtered to public
+  const nonCompliant = channels.filter(c => !isCompliant(c));
+  const dormant = channels.filter(c => c.lastActive > 90 && !c.name.startsWith("temp"));
+  const temp = channels.filter(c => c.name.startsWith("temp") && c.lastActive > 90);
+
+  const getOwnerName = (ownerId) => {
+    const p = peopleById[ownerId];
+    return p ? (p.name || p.displayName) : (ownerId || "—");
+  };
+
+  // Non-compliant: unique owners
+  const ncOwners = ["all", ...Array.from(new Set(nonCompliant.map(c => c.owner).filter(Boolean)))];
+
+  // Group non-compliant by owner
+  const ncByOwner = {};
+  nonCompliant.forEach(c => {
+    const o = c.owner || "unknown";
+    if (!ncByOwner[o]) ncByOwner[o] = [];
+    ncByOwner[o].push(c);
   });
 
-  const sortedPeople = [...people].sort((a, b) => b[mbSort] - a[mbSort]);
-  const activeSortOption = SORT_OPTIONS.find(o => o.key === mbSort);
+  // ── Channel table columns config
+  const CH_COLS = [
+    { key: "name",       label: "Channel" },
+    { key: "owner",      label: "Owner" },
+    { key: "created",    label: "Créé le" },
+    { key: "threadRatio",label: "Thread rate" },
+    { key: "msgCount",   label: "Messages (90j)" },
+    { key: "lastActive", label: "Dormant (j)" },
+  ];
+
+  function ChannelTable({ list, extraCols = [], showCompliance = true, showDormant = true }) {
+    const sorted = sortChannels(list, chSort, chDir);
+    return (
+      <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+          <thead>
+            <tr style={{ borderBottom: "1px solid #2d2d44" }}>
+              {CH_COLS.map(col => (
+                <th key={col.key} style={{ padding: "6px 10px", textAlign: "left", color: "#6b6b8a", fontWeight: 600, whiteSpace: "nowrap" }}>
+                  <SortBtn label={col.label} sortKey={col.key} current={chSort} dir={chDir} onClick={toggleSort} />
+                </th>
+              ))}
+              {showCompliance && <th style={{ padding: "6px 10px", color: "#6b6b8a", fontWeight: 600 }}>Compliance</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map(ch => (
+              <tr key={ch.id} style={{ borderBottom: "1px solid #1a1a2e" }}>
+                <td style={{ padding: "7px 10px", fontFamily: "monospace", color: "#a78bfa", fontWeight: 700 }}>#{ch.name}</td>
+                <td style={{ padding: "7px 10px", color: "#c0c0df" }}>{getOwnerName(ch.owner)}</td>
+                <td style={{ padding: "7px 10px", color: "#a0a0bf" }}>{ch.created}</td>
+                <td style={{ padding: "7px 10px", color: sc(ch.threadRatio), fontWeight: 700 }}>{ch.threadRatio}%</td>
+                <td style={{ padding: "7px 10px", color: "#e2e2f0" }}>{ch.msgCount}</td>
+                <td style={{ padding: "7px 10px", color: ch.lastActive > 90 ? "#ef4444" : ch.lastActive > 30 ? "#f59e0b" : "#22c55e", fontWeight: ch.lastActive > 90 ? 700 : 400 }}>
+                  {ch.lastActive === 999 ? "—" : ch.lastActive === 0 ? "Aujourd'hui" : `${ch.lastActive}j`}
+                </td>
+                {showCompliance && (
+                  <td style={{ padding: "7px 10px" }}>
+                    <div style={{ display: "flex", gap: 4 }}>
+                      <Badge ok={ch.namingOk} label="naming" />
+                      <Badge ok={ch.hasTopic} label="topic" />
+                      <Badge ok={ch.hasDesc} label="desc" />
+                    </div>
+                  </td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {sorted.length === 0 && <div style={{ textAlign: "center", padding: 32, color: "#6b6b8a", fontSize: 12 }}>Aucun channel dans cette catégorie ✅</div>}
+      </div>
+    );
+  }
 
   const TABS = [
-    { id: "overview", l: "📊 Overview" },
-    { id: "channels", l: `📡 Channels (${total})` },
-    { id: "people", l: `👥 People (${people.length})` },
-    { id: "groupdms", l: `💬 Group DMs (${groupDms.length})` },
+    { id: "overview",   l: "📊 Overview" },
+    { id: "channels",   l: `📡 Channels (${total})` },
+    { id: "people",     l: `👥 People (${people.length})` },
+    { id: "groupdms",   l: `💬 Group DMs (${groupDms.length})` },
     { id: "usergroups", l: `🏷️ User Groups (${groups.length})` },
-    { id: "actions", l: "⚡ Actions" },
+    { id: "actions",    l: "⚡ Actions" },
+  ];
+
+  const CH_TABS = [
+    { id: "all",          l: `Tous (${pubChannels.length})` },
+    { id: "noncompliant", l: `⚠️ Non-compliant (${nonCompliant.length})` },
+    { id: "dormant",      l: `😴 Dormants (${dormant.length})` },
+    { id: "temp",         l: `🕐 Temp (${temp.length})` },
   ];
 
   return (
     <>
-      <style>{`@keyframes spin { to { transform: rotate(360deg) } } * { box-sizing: border-box; margin: 0; padding: 0; }`}</style>
-      <div style={{ background: "#0d0d1a", minHeight: "100vh", color: "#e2e2f0", fontFamily: "Inter,sans-serif", padding: "20px 16px", maxWidth: 1100, margin: "0 auto" }}>
+      <style>{`@keyframes spin { to { transform: rotate(360deg) } } * { box-sizing: border-box; margin: 0; padding: 0; } tr:hover td { background: #1a1a2e; }`}</style>
+      <div style={{ background: "#0d0d1a", minHeight: "100vh", color: "#e2e2f0", fontFamily: "Inter,sans-serif", padding: "20px 16px", maxWidth: 1200, margin: "0 auto" }}>
 
         {/* Header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 22, flexWrap: "wrap", gap: 10 }}>
           <div>
             <div style={{ fontSize: 22, fontWeight: 800 }}>⚡ Slack Health Dashboard <span style={{ color: "#6366f1" }}>· Vizzia</span></div>
             <div style={{ fontSize: 11, color: "#6b6b8a", marginTop: 4 }}>
-              {data?.updatedAt ? `Mis à jour le ${new Date(data.updatedAt).toLocaleString("fr-FR")}` : "Chargement…"} · 90 derniers jours
+              {data?.updatedAt ? `Mis à jour le ${new Date(data.updatedAt).toLocaleString("fr-FR")}` : "Chargement…"} · 90 derniers jours · channels publics uniquement
             </div>
           </div>
           <button onClick={fetchData} disabled={loading} style={{ background: loading ? "#2d2d44" : "linear-gradient(135deg,#6366f1,#8b5cf6)", border: "none", borderRadius: 10, padding: "9px 18px", color: "#fff", fontWeight: 600, fontSize: 12, cursor: loading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 8 }}>
@@ -185,7 +283,7 @@ export default function App() {
           </button>
         </div>
 
-        {/* Tabs */}
+        {/* Main tabs */}
         <div style={{ display: "flex", gap: 4, marginBottom: 20, background: "#13131f", borderRadius: 11, padding: 4, flexWrap: "wrap" }}>
           {TABS.map(t => (
             <button key={t.id} onClick={() => setTab(t.id)} style={{ background: tab === t.id ? "#6366f1" : "transparent", border: "none", borderRadius: 8, padding: "7px 13px", color: tab === t.id ? "#fff" : "#a0a0bf", fontWeight: 600, fontSize: 12, cursor: "pointer" }}>
@@ -194,16 +292,16 @@ export default function App() {
           ))}
         </div>
 
-        {/* OVERVIEW */}
+        {/* ── OVERVIEW ── */}
         {tab === "overview" && (
           <div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(150px,1fr))", gap: 10, marginBottom: 20 }}>
               <KpiCard icon="✅" label="Compliance globale" value={`${pct(compliantAll, total)}%`} sub={`${compliantAll}/${total} channels`} color={sc(pct(compliantAll, total))} />
-              <KpiCard icon="🔓" label="Public vs Private" value={`${pct(pub, total)}%`} sub={`${pub} pub · ${priv} priv`} color="#22d3ee" />
               <KpiCard icon="📝" label="Avec description" value={`${pct(withDesc, total)}%`} sub={`${withDesc}/${total}`} color="#f472b6" />
               <KpiCard icon="🏷️" label="Avec topic" value={`${pct(withTopic, total)}%`} sub={`${withTopic}/${total}`} color="#fb923c" />
-              <KpiCard icon="😴" label="Dormants +90j" value={dormant.length} sub={`dont ${tempDormant.length} temp-`} color={dormant.length > 5 ? "#ef4444" : "#f59e0b"} />
+              <KpiCard icon="😴" label="Dormants +90j" value={dormantChs.length} sub={`dont ${tempDormant.length} temp-`} color={dormantChs.length > 5 ? "#ef4444" : "#f59e0b"} />
               <KpiCard icon="👥" label="Membres actifs" value={people.length} color="#22c55e" />
+              <KpiCard icon="📡" label="Channels publics" value={total} color="#22d3ee" />
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
               <div style={{ background: "#1e1e2e", borderRadius: 14, padding: 18, border: "1px solid #2d2d44" }}>
@@ -212,7 +310,6 @@ export default function App() {
                   { l: "Naming Convention", v: pct(channels.filter(c => c.namingOk).length, total) },
                   { l: "Topic renseigné", v: pct(withTopic, total) },
                   { l: "Description renseignée", v: pct(withDesc, total) },
-                  { l: "Channels publics", v: pct(pub, total) },
                   { l: "Conformité complète", v: pct(compliantAll, total) },
                 ].map(r => (
                   <div key={r.l} style={{ marginBottom: 10 }}>
@@ -244,86 +341,82 @@ export default function App() {
             <div style={{ background: "#1e1e2e", borderRadius: 14, padding: 18, border: "1px solid #2d2d44" }}>
               <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 12 }}>🚨 Alertes actives</div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {nonCompliantList.length > 0 && <div style={{ background: "#450a0a", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "#fca5a5" }}>⚠️ <strong>{nonCompliantList.length}</strong> channels non-compliant</div>}
+                {nonCompliant.length > 0 && <div style={{ background: "#450a0a", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "#fca5a5" }}>⚠️ <strong>{nonCompliant.length}</strong> channels non-compliant</div>}
                 {tempDormant.length > 0 && <div style={{ background: "#3f1a00", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "#fdba74" }}>🗄️ <strong>{tempDormant.length}</strong> channels temp- inactifs depuis +90j</div>}
-                {dormant.filter(c => !c.name.startsWith("temp")).length > 0 && <div style={{ background: "#1e2a3a", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "#93c5fd" }}>💤 <strong>{dormant.filter(c => !c.name.startsWith("temp")).length}</strong> autres channels dormants</div>}
+                {dormant.length > 0 && <div style={{ background: "#1e2a3a", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "#93c5fd" }}>💤 <strong>{dormant.length}</strong> autres channels dormants</div>}
                 {groupDms.filter(g => g.messages3m >= 50).length > 0 && <div style={{ background: "#1a1a3a", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "#c4b5fd" }}>💬 <strong>{groupDms.filter(g => g.messages3m >= 50).length}</strong> group DMs très actifs → suggérer un channel</div>}
               </div>
             </div>
           </div>
         )}
 
-        {/* CHANNELS */}
+        {/* ── CHANNELS ── */}
         {tab === "channels" && (
           <div>
-            <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
-              {[["all","Tous"],["non-compliant","⚠️ Non-compliant"],["no-desc","📝 Sans desc"],["dormant","😴 Dormants"],["temp","🕐 Temp"],["private","🔒 Privés"]].map(([f,l]) => (
-                <button key={f} onClick={() => setChFilter(f)} style={{ background: chFilter === f ? "#6366f1" : "#1e1e2e", border: "1px solid #2d2d44", borderRadius: 8, padding: "5px 11px", color: chFilter === f ? "#fff" : "#a0a0bf", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>{l}</button>
+            {/* Channel sub-tabs */}
+            <div style={{ display: "flex", gap: 4, marginBottom: 16, background: "#13131f", borderRadius: 10, padding: 4, flexWrap: "wrap" }}>
+              {CH_TABS.map(t => (
+                <button key={t.id} onClick={() => setChTab(t.id)} style={{ background: chTab === t.id ? "#4f46e5" : "transparent", border: "none", borderRadius: 7, padding: "6px 12px", color: chTab === t.id ? "#fff" : "#a0a0bf", fontWeight: 600, fontSize: 11, cursor: "pointer" }}>
+                  {t.l}
+                </button>
               ))}
-              <input value={chSearch} onChange={e => setChSearch(e.target.value)} placeholder="🔍 Rechercher..." style={{ marginLeft: "auto", background: "#1e1e2e", border: "1px solid #2d2d44", borderRadius: 8, padding: "5px 10px", color: "#e2e2f0", fontSize: 11, outline: "none", width: 160 }} />
-              <span style={{ fontSize: 11, color: "#6b6b8a" }}>{filtered.length} résultats</span>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {filtered.map(ch => {
-                const open = expandedCh === ch.id;
-                return (
-                  <div key={ch.id} style={{ background: "#1e1e2e", borderRadius: 10, border: `1px solid ${open ? "#6366f1" : "#2d2d44"}`, overflow: "hidden" }}>
-                    <div onClick={() => setExpandedCh(open ? null : ch.id)} style={{ display: "flex", alignItems: "center", padding: "9px 14px", cursor: "pointer", gap: 10, flexWrap: "wrap" }}>
-                      <span style={{ fontSize: 12, color: ch.isPrivate ? "#f59e0b" : "#a78bfa", fontWeight: 700, fontFamily: "monospace" }}>#{ch.name}</span>
-                      <div style={{ display: "flex", gap: 4, marginLeft: "auto", flexWrap: "wrap" }}>
-                        <Badge ok={ch.namingOk} label="naming" />
-                        <Badge ok={ch.hasTopic} label="topic" />
-                        <Badge ok={ch.hasDesc} label="desc" />
-                        {ch.lastActive > 90 && <span style={{ fontSize: 10, background: "#450a0a", color: "#fca5a5", borderRadius: 20, padding: "2px 6px", fontWeight: 600 }}>😴 {ch.lastActive}j</span>}
-                      </div>
-                      <span style={{ fontSize: 10, color: "#6b6b8a" }}>{open ? "▲" : "▼"}</span>
-                    </div>
-                    {open && (
-                      <div style={{ padding: "0 14px 14px", borderTop: "1px solid #2d2d44", display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10, marginTop: 10 }}>
-                        <div><div style={{ fontSize: 10, color: "#6b6b8a" }}>Créé le</div><div style={{ fontSize: 12, fontWeight: 600 }}>{ch.created}</div></div>
-                        <div><div style={{ fontSize: 10, color: "#6b6b8a" }}>Dernier msg</div><div style={{ fontSize: 12, fontWeight: 600, color: ch.lastActive > 90 ? "#ef4444" : ch.lastActive > 30 ? "#f59e0b" : "#22c55e" }}>{ch.lastActive === 0 ? "Aujourd'hui" : `il y a ${ch.lastActive}j`}</div></div>
-                        <div><div style={{ fontSize: 10, color: "#6b6b8a" }}>Messages (90j)</div><div style={{ fontSize: 12, fontWeight: 600 }}>{ch.msgCount}</div></div>
-                        <div><div style={{ fontSize: 10, color: "#6b6b8a" }}>Thread rate</div><div style={{ fontSize: 12, fontWeight: 600, color: sc(ch.threadRatio) }}>{ch.threadRatio}%</div></div>
-                        <div><div style={{ fontSize: 10, color: "#6b6b8a" }}>Visibilité</div><div style={{ fontSize: 12, fontWeight: 600 }}>{ch.isPrivate ? "Privé 🔒" : "Public 🔓"}</div></div>
-                        {ch.topicValue && <div style={{ gridColumn: "span 3" }}><div style={{ fontSize: 10, color: "#6b6b8a" }}>Topic</div><div style={{ fontSize: 11, color: "#c0c0df", fontStyle: "italic" }}>{ch.topicValue}</div></div>}
-                        {ch.descValue && <div style={{ gridColumn: "span 3" }}><div style={{ fontSize: 10, color: "#6b6b8a" }}>Description</div><div style={{ fontSize: 11, color: "#c0c0df", fontStyle: "italic" }}>{ch.descValue}</div></div>}
-                      </div>
-                    )}
+
+            <div style={{ background: "#1e1e2e", borderRadius: 14, border: "1px solid #2d2d44", overflow: "hidden" }}>
+
+              {/* ALL */}
+              {chTab === "all" && <ChannelTable list={pubChannels} showCompliance={true} />}
+
+              {/* NON-COMPLIANT */}
+              {chTab === "noncompliant" && (
+                <div>
+                  {/* Owner filter */}
+                  <div style={{ padding: "12px 16px", borderBottom: "1px solid #2d2d44", display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                    <span style={{ fontSize: 11, color: "#6b6b8a" }}>Filtrer par owner :</span>
+                    {ncOwners.map(o => (
+                      <button key={o} onClick={() => setNcOwnerFilter(o)} style={{ background: ncOwnerFilter === o ? "#6366f1" : "#13131f", border: "1px solid #2d2d44", borderRadius: 20, padding: "3px 10px", color: ncOwnerFilter === o ? "#fff" : "#a0a0bf", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                        {o === "all" ? "Tous" : getOwnerName(o)}
+                      </button>
+                    ))}
                   </div>
-                );
-              })}
+                  <ChannelTable
+                    list={nonCompliant.filter(c => ncOwnerFilter === "all" || c.owner === ncOwnerFilter)}
+                    showCompliance={true}
+                  />
+                </div>
+              )}
+
+              {/* DORMANT */}
+              {chTab === "dormant" && <ChannelTable list={dormant} showCompliance={true} />}
+
+              {/* TEMP */}
+              {chTab === "temp" && <ChannelTable list={temp} showCompliance={true} />}
             </div>
           </div>
         )}
 
-        {/* PEOPLE USAGE */}
+        {/* ── PEOPLE ── */}
         {tab === "people" && (
           <div>
-            {/* Sort selector */}
             <div style={{ background: "#1e1e2e", borderRadius: 12, padding: "12px 16px", marginBottom: 16, border: "1px solid #2d2d44" }}>
               <div style={{ fontSize: 11, color: "#6b6b8a", marginBottom: 8 }}>Classer par :</div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {SORT_OPTIONS.map(o => (
+                {PEOPLE_SORT.map(o => (
                   <button key={o.key} onClick={() => setMbSort(o.key)} style={{ background: mbSort === o.key ? o.color : "#13131f", border: `1px solid ${mbSort === o.key ? o.color : "#2d2d44"}`, borderRadius: 20, padding: "5px 12px", color: mbSort === o.key ? "#fff" : "#a0a0bf", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
                     {o.label}
                   </button>
                 ))}
               </div>
             </div>
-
-            {/* Table header */}
             <div style={{ display: "grid", gridTemplateColumns: "2fr repeat(6,1fr)", gap: 4, padding: "6px 14px", marginBottom: 4 }}>
               <div style={{ fontSize: 10, color: "#6b6b8a" }}>Membre</div>
-              {SORT_OPTIONS.map(o => (
+              {PEOPLE_SORT.map(o => (
                 <div key={o.key} style={{ fontSize: 10, color: mbSort === o.key ? o.color : "#6b6b8a", textAlign: "center", fontWeight: mbSort === o.key ? 700 : 400 }}>{o.label}</div>
               ))}
             </div>
-
-            {/* People rows */}
             <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-              {sortedPeople.map((m, rank) => (
+              {[...people].sort((a, b) => b[mbSort] - a[mbSort]).map((m, rank) => (
                 <div key={m.id} style={{ background: "#1e1e2e", borderRadius: 10, border: "1px solid #2d2d44", padding: "10px 14px", display: "grid", gridTemplateColumns: "2fr repeat(6,1fr)", gap: 4, alignItems: "center" }}>
-                  {/* Identity */}
                   <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
                     <span style={{ fontSize: 11, color: "#6b6b8a", width: 18, flexShrink: 0 }}>#{rank + 1}</span>
                     <div style={{ width: 32, height: 32, borderRadius: "50%", background: "linear-gradient(135deg,#6366f1,#8b5cf6)", overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700 }}>
@@ -334,25 +427,23 @@ export default function App() {
                       {m.title && <div style={{ fontSize: 10, color: "#6b6b8a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.title}</div>}
                     </div>
                   </div>
-
-                  {/* KPI cells */}
-                  <KpiCell value={m.mentions3m}         label="mentions"       color="#a78bfa" active={mbSort === "mentions3m"} />
-                  <KpiCell value={m.msgSent}            label="messages"       color="#22d3ee" active={mbSort === "msgSent"} />
-                  <KpiCell value={`${m.threadPct}%`}   label="thread pub"     color="#f472b6" active={mbSort === "threadPct"} />
-                  <KpiCell value={`${m.pubPct}%`}      label="pub ratio"      color="#22c55e" active={mbSort === "pubPct"} />
-                  <KpiCell value={m.reactionsGiven}     label="réac. données"  color="#f59e0b" active={mbSort === "reactionsGiven"} />
-                  <KpiCell value={m.reactionsReceived}  label="réac. reçues"   color="#fb923c" active={mbSort === "reactionsReceived"} />
+                  <KpiCell value={m.mentions3m}           label="mentions"      color="#a78bfa" active={mbSort === "mentions3m"} />
+                  <KpiCell value={m.msgSent}              label="messages"      color="#22d3ee" active={mbSort === "msgSent"} />
+                  <KpiCell value={`${m.threadPct ?? 0}%`} label="thread pub"    color="#f472b6" active={mbSort === "threadPct"} />
+                  <KpiCell value={`${m.pubPct}%`}         label="pub ratio"     color="#22c55e" active={mbSort === "pubPct"} />
+                  <KpiCell value={m.reactionsGiven}       label="réac. données" color="#f59e0b" active={mbSort === "reactionsGiven"} />
+                  <KpiCell value={m.reactionsReceived}    label="réac. reçues"  color="#fb923c" active={mbSort === "reactionsReceived"} />
                 </div>
               ))}
             </div>
           </div>
         )}
 
-        {/* GROUP DMS */}
+        {/* ── GROUP DMS ── */}
         {tab === "groupdms" && (
           <div>
             <div style={{ background: "#1a1a3a", borderRadius: 10, padding: "10px 14px", marginBottom: 14, fontSize: 12, color: "#c4b5fd", border: "1px solid #4c1d95" }}>
-              💬 <strong>{groupDms.length} Group DMs</strong> détectés · messages postés sur les <strong>90 derniers jours</strong>
+              💬 <strong>{groupDms.length} Group DMs</strong> · messages postés sur les <strong>90 derniers jours</strong>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {[...groupDms].sort((a, b) => b.messages3m - a.messages3m).map(g => {
@@ -380,7 +471,8 @@ export default function App() {
                           {g.members.map(mb => <span key={mb} style={{ background: "#2d2d44", borderRadius: 20, padding: "3px 10px", fontSize: 11, color: "#c4b5fd" }}>{mb}</span>)}
                         </div>
                         {hot && helpSlackChannel && (
-                          <button onClick={() => doNotify(helpSlackChannel.id, `💬 Le group DM entre *${g.members.join(", ")}* est très actif (${g.messages3m} messages en 90j). Envisagez de créer un channel dédié !`, g.name)} style={{ background: "linear-gradient(135deg,#5b21b6,#7c3aed)", border: "none", borderRadius: 8, padding: "7px 14px", color: "#fff", fontWeight: 600, fontSize: 11, cursor: "pointer" }}>
+                          <button onClick={() => doNotify(helpSlackChannel.id, `💬 Le group DM entre *${g.members.join(", ")}* est très actif (${g.messages3m} msgs en 90j). Envisagez de créer un channel dédié !`, g.name)}
+                            style={{ background: "linear-gradient(135deg,#5b21b6,#7c3aed)", border: "none", borderRadius: 8, padding: "7px 14px", color: "#fff", fontWeight: 600, fontSize: 11, cursor: "pointer" }}>
                             📢 Suggérer un channel sur #help-slack
                           </button>
                         )}
@@ -393,7 +485,7 @@ export default function App() {
           </div>
         )}
 
-        {/* USER GROUPS */}
+        {/* ── USER GROUPS ── */}
         {tab === "usergroups" && (
           <div>
             {groups.length === 0 ? (
@@ -443,32 +535,68 @@ export default function App() {
           </div>
         )}
 
-        {/* ACTIONS */}
+        {/* ── ACTIONS ── */}
         {tab === "actions" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+
+            {/* Non-compliant — par owner */}
             <div style={{ background: "#1e1e2e", borderRadius: 14, padding: 18, border: "1px solid #2d2d44" }}>
               <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>⚠️ Notifier les owners — channels non-compliant</div>
-              <div style={{ fontSize: 11, color: "#6b6b8a", marginBottom: 12 }}>{nonCompliantList.length} channels. Message posté sur <strong style={{ color: "#a78bfa" }}>#help-slack</strong>.</div>
-              <div style={{ maxHeight: 180, overflowY: "auto", marginBottom: 12 }}>
-                {nonCompliantList.map(c => (
-                  <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, padding: "4px 0", borderBottom: "1px solid #2d2d44", gap: 4, flexWrap: "wrap" }}>
-                    <span style={{ fontFamily: "monospace", fontSize: 10 }}>#{c.name}</span>
-                    <div style={{ display: "flex", gap: 3 }}>
-                      {!c.namingOk && <Badge ok={false} label="naming" />}
-                      {!c.hasTopic && <Badge ok={false} label="topic" />}
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <div style={{ fontSize: 11, color: "#6b6b8a", marginBottom: 14 }}>Un message personnalisé par owner, posté sur <strong style={{ color: "#a78bfa" }}>#help-slack</strong>.</div>
+
+              {/* Send all button */}
               <button onClick={() => {
-                if (!helpSlackChannel) { addLog("❌ Channel #help-slack introuvable"); return; }
-                const list = nonCompliantList.map(c => `• #${c.name} (${!c.namingOk ? "naming" : ""}${!c.namingOk && !c.hasTopic ? " + " : ""}${!c.hasTopic ? "topic manquant" : ""})`).join("\n");
-                doNotify(helpSlackChannel.id, `⚠️ *Channels non-compliant détectés* — merci de corriger :\n${list}\n\n📖 Guide naming : https://www.notion.so/vizzia/Slack-Channels-Naming-2e745c4b899e80038d67d93760f29717`, "notification non-compliant");
-              }} style={{ background: "linear-gradient(135deg,#dc2626,#b91c1c)", border: "none", borderRadius: 9, padding: "8px 16px", color: "#fff", fontWeight: 600, fontSize: 12, cursor: "pointer" }}>
-                📩 Poster sur #help-slack
+                if (!helpSlackChannel) { addLog("❌ #help-slack introuvable"); return; }
+                Object.entries(ncByOwner).forEach(([ownerId, chs]) => {
+                  const ownerName = getOwnerName(ownerId);
+                  const list = chs.map(c => `• #${c.name} — ${[!c.namingOk && "naming ❌", !c.hasTopic && "topic manquant ❌", !c.hasDesc && "description manquante ❌"].filter(Boolean).join(", ")}`).join("\n");
+                  doNotify(helpSlackChannel.id,
+                    `⚠️ *Action requise — channels non-compliant*\n\nBonjour *${ownerName}*, vous êtes owner des channels suivants qui ne respectent pas les conventions Slack :\n\n${list}\n\n📖 Guide naming : https://www.notion.so/vizzia/Slack-Channels-Naming-2e745c4b899e80038d67d93760f29717\n\nMerci de corriger dès que possible 🙏`,
+                    `notification owner ${ownerName}`
+                  );
+                });
+              }} style={{ background: "linear-gradient(135deg,#dc2626,#b91c1c)", border: "none", borderRadius: 9, padding: "8px 18px", color: "#fff", fontWeight: 600, fontSize: 12, cursor: "pointer", marginBottom: 14 }}>
+                📩 Envoyer à tous les owners ({Object.keys(ncByOwner).length})
               </button>
+
+              {/* Per-owner cards */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {Object.entries(ncByOwner).map(([ownerId, chs]) => {
+                  const ownerName = getOwnerName(ownerId);
+                  return (
+                    <div key={ownerId} style={{ background: "#13131f", borderRadius: 10, padding: "12px 14px", border: "1px solid #2d2d44" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
+                        <div style={{ fontWeight: 700, fontSize: 12, color: "#e2e2f0" }}>👤 {ownerName}</div>
+                        <button onClick={() => {
+                          if (!helpSlackChannel) { addLog("❌ #help-slack introuvable"); return; }
+                          const list = chs.map(c => `• #${c.name} — ${[!c.namingOk && "naming ❌", !c.hasTopic && "topic manquant ❌", !c.hasDesc && "description manquante ❌"].filter(Boolean).join(", ")}`).join("\n");
+                          doNotify(helpSlackChannel.id,
+                            `⚠️ *Action requise — channels non-compliant*\n\nBonjour *${ownerName}*, vous êtes owner des channels suivants qui ne respectent pas les conventions Slack :\n\n${list}\n\n📖 Guide naming : https://www.notion.so/vizzia/Slack-Channels-Naming-2e745c4b899e80038d67d93760f29717\n\nMerci de corriger dès que possible 🙏`,
+                            `notification owner ${ownerName}`
+                          );
+                        }} style={{ background: "#450a0a", border: "1px solid #7f1d1d", borderRadius: 7, padding: "4px 12px", color: "#fca5a5", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                          📩 Notifier
+                        </button>
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        {chs.map(c => (
+                          <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                            <span style={{ fontFamily: "monospace", fontSize: 11, color: "#a78bfa" }}>#{c.name}</span>
+                            <div style={{ display: "flex", gap: 3 }}>
+                              {!c.namingOk && <Badge ok={false} label="naming" />}
+                              {!c.hasTopic && <Badge ok={false} label="topic" />}
+                              {!c.hasDesc && <Badge ok={false} label="desc" />}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
 
+            {/* Temp dormant */}
             <div style={{ background: "#1e1e2e", borderRadius: 14, padding: 18, border: "1px solid #2d2d44" }}>
               <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>🗄️ Archiver les channels <code style={{ color: "#a78bfa" }}>temp-</code> inactifs</div>
               <div style={{ fontSize: 11, color: "#6b6b8a", marginBottom: 12 }}>{tempDormant.length} channels sans message depuis +90j.</div>
@@ -486,11 +614,12 @@ export default function App() {
               </button>
             </div>
 
+            {/* Dormant notify */}
             <div style={{ background: "#1e1e2e", borderRadius: 14, padding: 18, border: "1px solid #2d2d44" }}>
               <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>💤 Alerter les owners — channels dormants</div>
-              <div style={{ fontSize: 11, color: "#6b6b8a", marginBottom: 12 }}>{dormant.filter(c => !c.name.startsWith("temp")).length} channels inactifs (hors temp-).</div>
+              <div style={{ fontSize: 11, color: "#6b6b8a", marginBottom: 12 }}>{dormant.length} channels inactifs (hors temp-).</div>
               <div style={{ maxHeight: 140, overflowY: "auto", marginBottom: 12 }}>
-                {dormant.filter(c => !c.name.startsWith("temp")).map(c => (
+                {dormant.map(c => (
                   <div key={c.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 11, padding: "4px 0", borderBottom: "1px solid #2d2d44" }}>
                     <span style={{ fontFamily: "monospace", fontSize: 10 }}>#{c.name}</span>
                     <span style={{ color: "#93c5fd" }}>{c.lastActive}j</span>
@@ -499,13 +628,14 @@ export default function App() {
               </div>
               <button onClick={() => {
                 if (!helpSlackChannel) { addLog("❌ #help-slack introuvable"); return; }
-                const list = dormant.filter(c => !c.name.startsWith("temp")).map(c => `• #${c.name} (inactif depuis ${c.lastActive}j)`).join("\n");
+                const list = dormant.map(c => `• #${c.name} (inactif depuis ${c.lastActive}j)`).join("\n");
                 doNotify(helpSlackChannel.id, `💤 *Channels inactifs depuis +90 jours* — les owners sont invités à confirmer l'archivage :\n${list}`, "alerte dormants");
               }} style={{ background: "linear-gradient(135deg,#1e40af,#1d4ed8)", border: "none", borderRadius: 9, padding: "8px 16px", color: "#fff", fontWeight: 600, fontSize: 12, cursor: "pointer" }}>
                 ⚠️ Envoyer alertes archivage
               </button>
             </div>
 
+            {/* Log */}
             <div style={{ background: "#1e1e2e", borderRadius: 14, padding: 18, border: "1px solid #2d2d44" }}>
               <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8 }}>📋 Journal d'activité</div>
               {actionLog.length === 0
@@ -517,6 +647,7 @@ export default function App() {
             </div>
           </div>
         )}
+
       </div>
     </>
   );
