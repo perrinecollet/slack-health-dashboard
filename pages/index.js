@@ -201,7 +201,7 @@ export default function App() {
     { key: "owner",      label: "Owner" },
     { key: "created",    label: "Créé le" },
     { key: "threadRatio",label: "Thread rate" },
-    { key: "msgCount",   label: "Messages (90j)" },
+    { key: "msgCount",   label: "Messages (200 derniers)" },
     { key: "lastActive", label: "Dormant (j)" },
   ];
 
@@ -278,7 +278,7 @@ export default function App() {
           <div>
             <div style={{ fontSize: 22, fontWeight: 800 }}>⚡ Slack Health Dashboard <span style={{ color: "#6366f1" }}>· Vizzia</span></div>
             <div style={{ fontSize: 11, color: "#6b6b8a", marginTop: 4 }}>
-              {data?.updatedAt ? `Mis à jour le ${new Date(data.updatedAt).toLocaleString("fr-FR")}` : "Chargement…"} · 90 derniers jours · channels publics uniquement
+              {data?.updatedAt ? `Mis à jour le ${new Date(data.updatedAt).toLocaleString("fr-FR")}` : "Chargement…"} · 200 derniers messages / channel · channels publics uniquement
             </div>
           </div>
           <button onClick={fetchData} disabled={loading} style={{ background: loading ? "#2d2d44" : "linear-gradient(135deg,#6366f1,#8b5cf6)", border: "none", borderRadius: 10, padding: "9px 18px", color: "#fff", fontWeight: 600, fontSize: 12, cursor: loading ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 8 }}>
