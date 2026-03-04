@@ -258,8 +258,11 @@ export default function App() {
     { id: "actions",    l: "⚡ Actions" },
   ];
 
+  const compliant = channels.filter(c => c.fullyCompliant || (isCompliant(c) && c.hasDesc));
+
   const CH_TABS = [
     { id: "all",          l: `Tous (${pubChannels.length})` },
+    { id: "compliant",    l: `✅ Compliant (${compliant.length})` },
     { id: "noncompliant", l: `⚠️ Non-compliant (${nonCompliant.length})` },
     { id: "dormant",      l: `😴 Dormants (${dormant.length})` },
     { id: "temp",         l: `🕐 Temp (${temp.length})` },
@@ -367,24 +370,11 @@ export default function App() {
               {/* ALL */}
               {chTab === "all" && <ChannelTable list={pubChannels} showCompliance={true} />}
 
+              {/* COMPLIANT */}
+              {chTab === "compliant" && <ChannelTable list={compliant} showCompliance={true} />}
+
               {/* NON-COMPLIANT */}
-              {chTab === "noncompliant" && (
-                <div>
-                  {/* Owner filter */}
-                  <div style={{ padding: "12px 16px", borderBottom: "1px solid #2d2d44", display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-                    <span style={{ fontSize: 11, color: "#6b6b8a" }}>Filtrer par owner :</span>
-                    {ncOwners.map(o => (
-                      <button key={o} onClick={() => setNcOwnerFilter(o)} style={{ background: ncOwnerFilter === o ? "#6366f1" : "#13131f", border: "1px solid #2d2d44", borderRadius: 20, padding: "3px 10px", color: ncOwnerFilter === o ? "#fff" : "#a0a0bf", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
-                        {o === "all" ? "Tous" : getOwnerName(o)}
-                      </button>
-                    ))}
-                  </div>
-                  <ChannelTable
-                    list={nonCompliant.filter(c => ncOwnerFilter === "all" || c.owner === ncOwnerFilter)}
-                    showCompliance={true}
-                  />
-                </div>
-              )}
+              {chTab === "noncompliant" && <ChannelTable list={nonCompliant} showCompliance={true} />}
 
               {/* DORMANT */}
               {chTab === "dormant" && <ChannelTable list={dormant} showCompliance={true} />}
