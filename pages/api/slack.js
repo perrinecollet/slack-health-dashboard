@@ -32,7 +32,6 @@ async function fetchAll(method, params, key) {
   return results;
 }
 
-// Fetch ALL messages for a channel since oldest (paginated)
 async function fetchAllMessages(channelId, oldest) {
   let cursor, msgs = [];
   do {
@@ -54,7 +53,6 @@ function ninetyDaysAgo() {
   return Math.floor(d.getTime() / 1000);
 }
 
-// Rate-limit-safe parallel execution (batch of N)
 async function batchMap(arr, fn, batchSize = 10) {
   const results = [];
   for (let i = 0; i < arr.length; i += batchSize) {
@@ -66,14 +64,15 @@ async function batchMap(arr, fn, batchSize = 10) {
   return results;
 }
 
-// Fetch messages with a per-channel timeout
 async function fetchMessages(channelId, oldest) {
   try {
     const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 2000));
     const fetch = slack.conversations.history({ channel: channelId, limit: 200, oldest });
     const res = await Promise.race([fetch, timeout]);
     return res.messages || [];
-  } catch (_) { return []; }
+  } catch (e) {
+    return [];
+  }
 }
 
 export default async function handler(req, res) {
@@ -111,7 +110,7 @@ export default async function handler(req, res) {
     try {
       const ugRes = await slack.usergroups.list({ include_users: true });
       userGroups = ugRes.usergroups || [];
-    } catch (_) {}
+    } catch (e) {}
 
     // 4. Group DMs
     const mpims = await fetchAll("conversations.list", { types: "mpim", exclude_archived: true }, "channels");
@@ -128,7 +127,6 @@ export default async function handler(req, res) {
     }
     const ugStats = {};
 
-    // Process ALL channels in parallel (each has 2s timeout, total stays under 9s)
     await Promise.all(allChannels.map(async ch => {
       try {
         const msgs = await fetchMessages(ch.id, oldest);
@@ -145,32 +143,28 @@ export default async function handler(req, res) {
             s.privateMsgs++;
           } else {
             s.publicMsgs++;
-            // count thread messages on public channels
             if (msg.thread_ts && msg.thread_ts !== msg.ts) {
               s.threadMsgsInPublic++;
             }
           }
-          // reactions received
           for (const r of (msg.reactions || [])) {
             s.reactionsReceived += r.count;
             for (const uid of (r.users || [])) {
               if (memberStats[uid]) memberStats[uid].reactionsGiven++;
             }
           }
-          // mentions
           const mentionMatches = (msg.text || "").match(/<@U[A-Z0-9]+>/g) || [];
           for (const mention of mentionMatches) {
             const uid = mention.replace(/<@|>/g, "");
             if (memberStats[uid]) memberStats[uid].mentions++;
           }
-          // user group mentions
           const ugMatches = (msg.text || "").match(/<!subteam\^([A-Z0-9]+)\|/g) || [];
           for (const m of ugMatches) {
             const ugId = m.replace("<!subteam^", "").replace("|", "");
             ugStats[ugId] = (ugStats[ugId] || 0) + 1;
           }
         }
-      } catch (_) {
+      } catch (e) {
         channelStats[ch.id] = { lastMsg: null, threadRatio: 0, msgCount: 0 };
       }
     }));
@@ -218,7 +212,7 @@ export default async function handler(req, res) {
         publicMsgs: s.publicMsgs || 0,
         privateMsgs: s.privateMsgs || 0,
         pubPct,
-        threadPct, // % messages in thread on public channels
+        threadPct,
         reactionsGiven: s.reactionsGiven || 0,
         reactionsReceived: s.reactionsReceived || 0,
         mentions3m: s.mentions || 0,
