@@ -61,9 +61,17 @@ async function batchMap(arr, fn, batchSize = 10) {
     const batch = arr.slice(i, i + batchSize);
     const res = await Promise.all(batch.map(fn));
     results.push(...res);
-    if (i + batchSize < arr.length) await new Promise(r => setTimeout(r, 500));
+    if (i + batchSize < arr.length) await new Promise(r => setTimeout(r, 300));
   }
   return results;
+}
+
+// Fetch only first page of messages (fast, avoids timeout)
+async function fetchMessages(channelId, oldest) {
+  try {
+    const res = await slack.conversations.history({ channel: channelId, limit: 200, oldest });
+    return res.messages || [];
+  } catch (_) { return []; }
 }
 
 export default async function handler(req, res) {
@@ -106,24 +114,23 @@ export default async function handler(req, res) {
     // 4. Group DMs
     const mpims = await fetchAll("conversations.list", { types: "mpim", exclude_archived: true }, "channels");
 
-    // 5. Per-channel stats + per-user stats (fully paginated)
+    // 5. Per-channel stats + per-user stats
     const channelStats = {};
     const memberStats = {};
     for (const m of activeMembers) {
       memberStats[m.id] = {
         msgSent: 0, publicMsgs: 0, privateMsgs: 0,
-        threadMsgsInPublic: 0, // messages sent in a thread on public channels
+        threadMsgsInPublic: 0,
         reactionsGiven: 0, reactionsReceived: 0, mentions: 0,
       };
     }
     const ugStats = {};
 
-    // Process channels in batches to avoid rate limits
+    // Process channels in batches (limit 200 msgs per channel, no full pagination to avoid timeout)
     await batchMap(allChannels, async ch => {
       try {
-        const msgs = await fetchAllMessages(ch.id, oldest);
+        const msgs = await fetchMessages(ch.id, oldest);
         const lastMsg = msgs[0]?.ts ? Math.floor(Number(msgs[0].ts)) : null;
-        // threadRatio: messages that are thread replies (have thread_ts != ts)
         const threadReplies = msgs.filter(m => m.thread_ts && m.thread_ts !== m.ts).length;
         const threadRatio = msgs.length > 0 ? threadReplies / msgs.length : 0;
         channelStats[ch.id] = { lastMsg, threadRatio, msgCount: msgs.length };
@@ -169,12 +176,8 @@ export default async function handler(req, res) {
     // 6. Group DM stats
     const groupDmStats = {};
     await batchMap(mpims, async mpim => {
-      try {
-        const msgs = await fetchAllMessages(mpim.id, oldest);
-        groupDmStats[mpim.id] = { messages3m: msgs.length, memberIds: mpim.members || [] };
-      } catch (_) {
-        groupDmStats[mpim.id] = { messages3m: 0, memberIds: [] };
-      }
+      const msgs = await fetchMessages(mpim.id, oldest);
+      groupDmStats[mpim.id] = { messages3m: msgs.length, memberIds: mpim.members || [] };
     }, 5);
 
     // Build response
