@@ -22,7 +22,6 @@ function isCompliant(ch) {
   };
 }
 
-// Fetch all pages of a Slack list call
 async function fetchAll(method, params, key) {
   let cursor, results = [];
   do {
@@ -33,37 +32,60 @@ async function fetchAll(method, params, key) {
   return results;
 }
 
-// Unix timestamp for 3 months ago
-function threeMonthsAgo() {
+// Fetch ALL messages for a channel since oldest (paginated)
+async function fetchAllMessages(channelId, oldest) {
+  let cursor, msgs = [];
+  do {
+    const res = await slack.conversations.history({
+      channel: channelId,
+      limit: 200,
+      oldest,
+      cursor,
+    });
+    msgs = msgs.concat(res.messages || []);
+    cursor = res.response_metadata?.next_cursor;
+  } while (cursor);
+  return msgs;
+}
+
+function ninetyDaysAgo() {
   const d = new Date();
-  d.setMonth(d.getMonth() - 3);
+  d.setDate(d.getDate() - 90);
   return Math.floor(d.getTime() / 1000);
+}
+
+// Rate-limit-safe parallel execution (batch of N)
+async function batchMap(arr, fn, batchSize = 10) {
+  const results = [];
+  for (let i = 0; i < arr.length; i += batchSize) {
+    const batch = arr.slice(i, i + batchSize);
+    const res = await Promise.all(batch.map(fn));
+    results.push(...res);
+    if (i + batchSize < arr.length) await new Promise(r => setTimeout(r, 500));
+  }
+  return results;
 }
 
 export default async function handler(req, res) {
   if (req.method !== "GET") return res.status(405).end();
-
   const action = req.query.action;
 
   try {
-    // ── ACTION: archive a channel
     if (action === "archive") {
       const { channelId } = req.query;
       await slack.conversations.archive({ channel: channelId });
       return res.json({ ok: true });
     }
 
-    // ── ACTION: post a message to #help-slack
     if (action === "notify") {
       const { channelId, message } = req.query;
       await slack.chat.postMessage({ channel: channelId, text: message, mrkdwn: true });
       return res.json({ ok: true });
     }
 
-    // ── DEFAULT: fetch full dashboard data
-    const oldest = String(threeMonthsAgo());
+    const oldest = String(ninetyDaysAgo());
 
-    // 1. Channels (public + private)
+    // 1. Channels
     const [pubChannels, privChannels] = await Promise.all([
       fetchAll("conversations.list", { types: "public_channel", exclude_archived: true }, "channels"),
       fetchAll("conversations.list", { types: "private_channel", exclude_archived: true }, "channels"),
@@ -79,105 +101,83 @@ export default async function handler(req, res) {
     try {
       const ugRes = await slack.usergroups.list({ include_users: true });
       userGroups = ugRes.usergroups || [];
-    } catch (_) { /* usergroups scope may not be active yet */ }
+    } catch (_) {}
 
-    // 4. Group DMs (MPIM)
+    // 4. Group DMs
     const mpims = await fetchAll("conversations.list", { types: "mpim", exclude_archived: true }, "channels");
 
-    // 5. Per-channel: last message date + thread ratio (sampled, last 100 msgs)
+    // 5. Per-channel stats + per-user stats (fully paginated)
     const channelStats = {};
-    await Promise.all(
-      allChannels.slice(0, 80).map(async ch => { // cap at 80 to avoid rate limits
-        try {
-          const hist = await slack.conversations.history({ channel: ch.id, limit: 100, oldest });
-          const msgs = hist.messages || [];
-          const lastMsg = msgs[0]?.ts ? Math.floor(Number(msgs[0].ts)) : null;
-          const withThread = msgs.filter(m => m.thread_ts && m.thread_ts === m.ts).length;
-          const threadRatio = msgs.length > 0 ? withThread / msgs.length : 0;
-          const msgCount = msgs.length;
-          channelStats[ch.id] = { lastMsg, threadRatio, msgCount };
-        } catch (_) {
-          channelStats[ch.id] = { lastMsg: null, threadRatio: 0, msgCount: 0 };
-        }
-      })
-    );
-
-    // 6. Per-user: reactions given/received + messages sent + mentions (sampled)
     const memberStats = {};
     for (const m of activeMembers) {
-      memberStats[m.id] = { msgSent: 0, reactionsGiven: 0, reactionsReceived: 0, mentions: 0, publicMsgs: 0, privateMsgs: 0 };
+      memberStats[m.id] = {
+        msgSent: 0, publicMsgs: 0, privateMsgs: 0,
+        threadMsgsInPublic: 0, // messages sent in a thread on public channels
+        reactionsGiven: 0, reactionsReceived: 0, mentions: 0,
+      };
     }
+    const ugStats = {};
 
-    // Count messages + reactions across channels (sampled)
-    await Promise.all(
-      allChannels.slice(0, 60).map(async ch => {
-        try {
-          const hist = await slack.conversations.history({ channel: ch.id, limit: 200, oldest });
-          const msgs = hist.messages || [];
-          for (const msg of msgs) {
-            if (!msg.user || !memberStats[msg.user]) continue;
-            memberStats[msg.user].msgSent++;
-            if (ch.is_private) {
-              memberStats[msg.user].privateMsgs++;
-            } else {
-              memberStats[msg.user].publicMsgs++;
-            }
-            // reactions received
-            for (const r of (msg.reactions || [])) {
-              memberStats[msg.user].reactionsReceived += r.count;
-              // reactions given
-              for (const uid of (r.users || [])) {
-                if (memberStats[uid]) memberStats[uid].reactionsGiven++;
-              }
-            }
-            // mentions
-            const mentionMatches = (msg.text || "").match(/<@U[A-Z0-9]+>/g) || [];
-            for (const mention of mentionMatches) {
-              const uid = mention.replace(/<@|>/g, "");
-              if (memberStats[uid]) memberStats[uid].mentions++;
+    // Process channels in batches to avoid rate limits
+    await batchMap(allChannels, async ch => {
+      try {
+        const msgs = await fetchAllMessages(ch.id, oldest);
+        const lastMsg = msgs[0]?.ts ? Math.floor(Number(msgs[0].ts)) : null;
+        // threadRatio: messages that are thread replies (have thread_ts != ts)
+        const threadReplies = msgs.filter(m => m.thread_ts && m.thread_ts !== m.ts).length;
+        const threadRatio = msgs.length > 0 ? threadReplies / msgs.length : 0;
+        channelStats[ch.id] = { lastMsg, threadRatio, msgCount: msgs.length };
+
+        for (const msg of msgs) {
+          if (!msg.user || !memberStats[msg.user]) continue;
+          const s = memberStats[msg.user];
+          s.msgSent++;
+          if (ch.is_private) {
+            s.privateMsgs++;
+          } else {
+            s.publicMsgs++;
+            // count thread messages on public channels
+            if (msg.thread_ts && msg.thread_ts !== msg.ts) {
+              s.threadMsgsInPublic++;
             }
           }
-        } catch (_) {}
-      })
-    );
-
-    // 7. Group DM stats
-    const groupDmStats = {};
-    await Promise.all(
-      mpims.map(async mpim => {
-        try {
-          const hist = await slack.conversations.history({ channel: mpim.id, limit: 200, oldest });
-          const msgs = hist.messages || [];
-          groupDmStats[mpim.id] = {
-            messages3m: msgs.length,
-            memberIds: mpim.members || [],
-          };
-        } catch (_) {
-          groupDmStats[mpim.id] = { messages3m: 0, memberIds: [] };
-        }
-      })
-    );
-
-    // 8. User group mention counts
-    const ugStats = {};
-    if (userGroups.length > 0) {
-      await Promise.all(
-        allChannels.slice(0, 40).map(async ch => {
-          try {
-            const hist = await slack.conversations.history({ channel: ch.id, limit: 200, oldest });
-            for (const msg of (hist.messages || [])) {
-              const matches = (msg.text || "").match(/<!subteam\^([A-Z0-9]+)\|/g) || [];
-              for (const m of matches) {
-                const ugId = m.replace("<!subteam^", "").replace("|", "");
-                ugStats[ugId] = (ugStats[ugId] || 0) + 1;
-              }
+          // reactions received
+          for (const r of (msg.reactions || [])) {
+            s.reactionsReceived += r.count;
+            for (const uid of (r.users || [])) {
+              if (memberStats[uid]) memberStats[uid].reactionsGiven++;
             }
-          } catch (_) {}
-        })
-      );
-    }
+          }
+          // mentions
+          const mentionMatches = (msg.text || "").match(/<@U[A-Z0-9]+>/g) || [];
+          for (const mention of mentionMatches) {
+            const uid = mention.replace(/<@|>/g, "");
+            if (memberStats[uid]) memberStats[uid].mentions++;
+          }
+          // user group mentions
+          const ugMatches = (msg.text || "").match(/<!subteam\^([A-Z0-9]+)\|/g) || [];
+          for (const m of ugMatches) {
+            const ugId = m.replace("<!subteam^", "").replace("|", "");
+            ugStats[ugId] = (ugStats[ugId] || 0) + 1;
+          }
+        }
+      } catch (_) {
+        channelStats[ch.id] = { lastMsg: null, threadRatio: 0, msgCount: 0 };
+      }
+    }, 8);
 
-    // ── Build response
+    // 6. Group DM stats
+    const groupDmStats = {};
+    await batchMap(mpims, async mpim => {
+      try {
+        const msgs = await fetchAllMessages(mpim.id, oldest);
+        groupDmStats[mpim.id] = { messages3m: msgs.length, memberIds: mpim.members || [] };
+      } catch (_) {
+        groupDmStats[mpim.id] = { messages3m: 0, memberIds: [] };
+      }
+    }, 5);
+
+    // Build response
     const now = Math.floor(Date.now() / 1000);
 
     const channels = allChannels.map(ch => {
@@ -185,12 +185,8 @@ export default async function handler(req, res) {
       const stats = channelStats[ch.id] || {};
       const daysSinceLast = stats.lastMsg ? Math.floor((now - stats.lastMsg) / 86400) : 999;
       return {
-        id: ch.id,
-        name: ch.name,
-        isPrivate: ch.is_private,
-        hasTopic: c.topic,
-        hasDesc: c.desc,
-        namingOk: c.naming,
+        id: ch.id, name: ch.name, isPrivate: ch.is_private,
+        hasTopic: c.topic, hasDesc: c.desc, namingOk: c.naming,
         owner: ch.creator,
         created: new Date(ch.created * 1000).toISOString().split("T")[0],
         lastActive: daysSinceLast,
@@ -204,6 +200,8 @@ export default async function handler(req, res) {
     const people = activeMembers.map(m => {
       const s = memberStats[m.id] || {};
       const total = (s.publicMsgs || 0) + (s.privateMsgs || 0);
+      const pubPct = total > 0 ? Math.round((s.publicMsgs / total) * 100) : 0;
+      const threadPct = s.publicMsgs > 0 ? Math.round((s.threadMsgsInPublic / s.publicMsgs) * 100) : 0;
       return {
         id: m.id,
         name: m.real_name || m.name,
@@ -213,7 +211,8 @@ export default async function handler(req, res) {
         msgSent: s.msgSent || 0,
         publicMsgs: s.publicMsgs || 0,
         privateMsgs: s.privateMsgs || 0,
-        pubPct: total > 0 ? Math.round((s.publicMsgs / total) * 100) : 0,
+        pubPct,
+        threadPct, // % messages in thread on public channels
         reactionsGiven: s.reactionsGiven || 0,
         reactionsReceived: s.reactionsReceived || 0,
         mentions3m: s.mentions || 0,
@@ -226,18 +225,11 @@ export default async function handler(req, res) {
         const u = activeMembers.find(m => m.id === uid);
         return u ? (u.profile?.display_name || u.real_name || u.name) : uid;
       });
-      return {
-        id: mpim.id,
-        name: mpim.name,
-        members: memberNames,
-        messages3m: s.messages3m || 0,
-      };
+      return { id: mpim.id, name: mpim.name, members: memberNames, messages3m: s.messages3m || 0 };
     });
 
     const groups = userGroups.map(ug => ({
-      id: ug.id,
-      handle: `@${ug.handle}`,
-      name: ug.name,
+      id: ug.id, handle: `@${ug.handle}`, name: ug.name,
       description: ug.description || "",
       memberCount: ug.user_count || 0,
       memberIds: ug.users || [],
@@ -248,14 +240,7 @@ export default async function handler(req, res) {
       mentions3m: ugStats[ug.id] || 0,
     }));
 
-    return res.json({
-      ok: true,
-      updatedAt: new Date().toISOString(),
-      channels,
-      people,
-      groupDms,
-      groups,
-    });
+    return res.json({ ok: true, updatedAt: new Date().toISOString(), channels, people, groupDms, groups });
 
   } catch (err) {
     console.error(err);
