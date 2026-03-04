@@ -190,6 +190,7 @@ export default async function handler(req, res) {
       return {
         id: ch.id, name: ch.name, isPrivate: ch.is_private,
         hasTopic: c.topic, hasDesc: c.desc, namingOk: c.naming,
+        fullyCompliant: c.naming && !!ch.topic?.value && !!ch.purpose?.value,
         owner: ch.creator,
         created: new Date(ch.created * 1000).toISOString().split("T")[0],
         lastActive: daysSinceLast,
