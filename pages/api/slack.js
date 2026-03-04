@@ -173,7 +173,7 @@ export default async function handler(req, res) {
       } catch (_) {
         channelStats[ch.id] = { lastMsg: null, threadRatio: 0, msgCount: 0 };
       }
-    }, 8);
+    }));
 
     // 6. Group DM stats
     const groupDmStats = {};
