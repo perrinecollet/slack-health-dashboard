@@ -66,10 +66,12 @@ async function batchMap(arr, fn, batchSize = 10) {
   return results;
 }
 
-// Fetch only first page of messages (fast, avoids timeout)
+// Fetch messages with a per-channel timeout
 async function fetchMessages(channelId, oldest) {
   try {
-    const res = await slack.conversations.history({ channel: channelId, limit: 200, oldest });
+    const timeout = new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 2000));
+    const fetch = slack.conversations.history({ channel: channelId, limit: 200, oldest });
+    const res = await Promise.race([fetch, timeout]);
     return res.messages || [];
   } catch (_) { return []; }
 }
@@ -126,8 +128,8 @@ export default async function handler(req, res) {
     }
     const ugStats = {};
 
-    // Process channels in batches (limit 200 msgs per channel, no full pagination to avoid timeout)
-    await batchMap(allChannels, async ch => {
+    // Process ALL channels in parallel (each has 2s timeout, total stays under 9s)
+    await Promise.all(allChannels.map(async ch => {
       try {
         const msgs = await fetchMessages(ch.id, oldest);
         const lastMsg = msgs[0]?.ts ? Math.floor(Number(msgs[0].ts)) : null;
@@ -175,10 +177,10 @@ export default async function handler(req, res) {
 
     // 6. Group DM stats
     const groupDmStats = {};
-    await batchMap(mpims, async mpim => {
+    await Promise.all(mpims.map(async mpim => {
       const msgs = await fetchMessages(mpim.id, oldest);
       groupDmStats[mpim.id] = { messages3m: msgs.length, memberIds: mpim.members || [] };
-    }, 5);
+    }));
 
     // Build response
     const now = Math.floor(Date.now() / 1000);
