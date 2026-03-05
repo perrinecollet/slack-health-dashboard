@@ -151,6 +151,7 @@ export default function App() {
   const tempDormant = dormantChs.filter(c => c.name.startsWith("temp"));
   const nonCompliantList = channels.filter(c => !isCompliant(c));
   const helpSlackChannel = allChannelsRaw.find(c => c.name === "help-slack");
+  const generalChannel = allChannelsRaw.find(c => c.name === "general");
   const maxMentions = Math.max(...people.map(m => m.mentions3m), 1);
   const maxGdm = Math.max(...groupDms.map(g => g.messages3m), 1);
   const maxUg = Math.max(...groups.map(g => g.mentions3m), 1);
@@ -255,7 +256,8 @@ export default function App() {
     { id: "people",     l: `👥 People (${people.length})` },
     { id: "groupdms",   l: `💬 Group DMs (${groupDms.length})` },
     { id: "usergroups", l: `🏷️ User Groups (${groups.length})` },
-    { id: "actions",    l: "⚡ Actions" },
+    { id: "actions",      l: "⚡ Actions" },
+    { id: "bestpractices", l: "📚 Best Practices" },
   ];
 
   const CH_TABS = [
@@ -326,7 +328,7 @@ export default function App() {
   function ActionDormant() {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-        <div style={{ fontSize: 11, color: "#6b6b8a" }}>{dormant.length} channels inactifs depuis +90j (hors temp-).</div>
+        <div style={{ fontSize: 11, color: "#6b6b8a" }}>{dormant.length} channels inactifs depuis +90j (hors temp-). Le message sera posté dans <strong style={{ color: "#a78bfa" }}>#general</strong>.</div>
         <div style={{ background: "#13131f", borderRadius: 10, border: "1px solid #2d2d44", overflow: "hidden" }}>
           <div style={{ maxHeight: 200, overflowY: "auto" }}>
             {dormant.map(c => (
@@ -338,11 +340,11 @@ export default function App() {
           </div>
         </div>
         <button onClick={() => {
-          if (!helpSlackChannel) { addLog("❌ #help-slack introuvable"); return; }
+          if (!generalChannel) { addLog("❌ #general introuvable"); return; }
           const list = dormant.map(c => `• #${c.name} (inactif depuis ${c.lastActive}j)`).join("\n");
-          doNotify(helpSlackChannel.id, `💤 *Channels inactifs depuis +90 jours* — les owners sont invités à confirmer l'archivage :\n${list}`, "alerte dormants");
+          doNotify(generalChannel.id, `💤 *Channels inactifs depuis +90 jours* — les owners sont invités à confirmer l'archivage :\n${list}`, "alerte dormants");
         }} style={{ background: "linear-gradient(135deg,#1e40af,#1d4ed8)", border: "none", borderRadius: 9, padding: "8px 16px", color: "#fff", fontWeight: 600, fontSize: 12, cursor: "pointer", alignSelf: "flex-start" }}>
-          ⚠️ Envoyer alertes archivage sur #help-slack
+          ⚠️ Envoyer alertes archivage sur #general
         </button>
       </div>
     );
@@ -712,6 +714,60 @@ export default function App() {
                 })}
               </div>
             )}
+          </div>
+        )}
+
+        {/* ── BEST PRACTICES ── */}
+        {tab === "bestpractices" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
+            {/* Resources */}
+            <div style={{ background: "#1e1e2e", borderRadius: 14, padding: 18, border: "1px solid #2d2d44" }}>
+              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14 }}>🔗 Ressources</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {[
+                  { icon: "🎓", label: "Formation Slack", sub: "How to use Slack — Training", url: "https://www.notion.so/vizzia/How-to-use-Slack-Training-31245c4b899e8098b764c3c811cece02" },
+                  { icon: "📖", label: "Playbook Slack", sub: "How to use Slack — Playbook", url: "https://www.notion.so/vizzia/How-to-use-Slack-Playbook-31245c4b899e804990f8ccd3d8c036c7" },
+                  { icon: "🏷️", label: "Naming Convention", sub: "Conventions de nommage des channels", url: "https://www.notion.so/vizzia/Slack-Channels-Naming-2e745c4b899e80038d67d93760f29717" },
+                ].map(r => (
+                  <a key={r.url} href={r.url} target="_blank" rel="noreferrer" style={{ display: "flex", alignItems: "center", gap: 12, background: "#13131f", borderRadius: 10, padding: "12px 16px", border: "1px solid #2d2d44", textDecoration: "none", transition: "border-color .2s" }}
+                    onMouseEnter={e => e.currentTarget.style.borderColor = "#6366f1"}
+                    onMouseLeave={e => e.currentTarget.style.borderColor = "#2d2d44"}>
+                    <div style={{ fontSize: 24, flexShrink: 0 }}>{r.icon}</div>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 13, color: "#e2e2f0" }}>{r.label}</div>
+                      <div style={{ fontSize: 11, color: "#6b6b8a", marginTop: 2 }}>{r.sub}</div>
+                    </div>
+                    <div style={{ marginLeft: "auto", fontSize: 12, color: "#6366f1" }}>↗</div>
+                  </a>
+                ))}
+              </div>
+            </div>
+
+            {/* Best practices cards */}
+            <div style={{ fontWeight: 700, fontSize: 13, color: "#a0a0bf" }}>✨ Best Practices</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
+              {[
+                { icon: "🧵", color: "#ede9fe", border: "#c4b5fd", iconBg: "#7c3aed", title: "Reply in threads", lines: ["Keeps the main channel readable and discussions organized", "1 post = 1 topic"] },
+                { icon: "📋", color: "#fefce8", border: "#fde68a", iconBg: "#d97706", title: "Name channels clearly, add topic + description", lines: ["Follow naming conventions so everyone understands the purpose instantly", "Explain channel purpose with clear and short topic + description"] },
+                { icon: "✅", color: "#f0fdf4", border: "#bbf7d0", iconBg: "#16a34a", title: "React, don't reply", lines: ["Use emoji reactions for quick acknowledgements to reduce noise"] },
+                { icon: "💬", color: "#eff6ff", border: "#bfdbfe", iconBg: "#2563eb", title: "Default to channels", lines: ["Use channels for shared topics — keep knowledge visible and searchable", "Use DMs for private only"] },
+                { icon: "🔔", color: "#fff7ed", border: "#fed7aa", iconBg: "#ea580c", title: "Manage notifications wisely", lines: ["Tag for emergencies only", "Follow only key channels to protect focus and reduce interruptions"] },
+                { icon: "📌", color: "#fff1f2", border: "#fecdd3", iconBg: "#e11d48", title: "Pin key messages", lines: ["Highlight important decisions, resources, or links for easy access"] },
+              ].map(bp => (
+                <div key={bp.title} style={{ background: bp.color, borderRadius: 14, padding: "16px 18px", border: `1px solid ${bp.border}` }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                    <div style={{ width: 32, height: 32, borderRadius: 8, background: bp.iconBg, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, flexShrink: 0 }}>{bp.icon}</div>
+                    <div style={{ fontWeight: 700, fontSize: 13, color: "#1a1a2e" }}>{bp.title}</div>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    {bp.lines.map((l, i) => (
+                      <div key={i} style={{ fontSize: 12, color: "#374151" }}>{l}</div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
