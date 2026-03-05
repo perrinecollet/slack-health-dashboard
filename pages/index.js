@@ -501,11 +501,10 @@ export default function App() {
           <div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(150px,1fr))", gap: 10, marginBottom: 20 }}>
               <KpiCard icon="✅" label="Compliance globale" value={`${pct(compliantAll, total)}%`} sub={`${compliantAll}/${total} channels`} color={sc(pct(compliantAll, total))} />
-              <KpiCard icon="📝" label="Avec description" value={`${pct(withDesc, total)}%`} sub={`${withDesc}/${total}`} color="#f472b6" />
-              <KpiCard icon="🏷️" label="Avec topic" value={`${pct(withTopic, total)}%`} sub={`${withTopic}/${total}`} color="#fb923c" />
               <KpiCard icon="😴" label="Dormants +90j" value={dormantChs.length} sub={`dont ${tempDormant.length} temp-`} color={dormantChs.length > 5 ? "#ef4444" : "#f59e0b"} />
               <KpiCard icon="👥" label="Membres actifs" value={people.length} color="#22c55e" />
               <KpiCard icon="📡" label="Channels publics" value={total} color="#22d3ee" />
+              <KpiCard icon="🎉" label="Réactions reçues (90j)" value={people.reduce((s, m) => s + (m.reactionsReceived || 0), 0).toLocaleString()} color="#fb923c" />
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 20 }}>
               <div style={{ background: "#1e1e2e", borderRadius: 14, padding: 18, border: "1px solid #2d2d44" }}>
@@ -526,20 +525,23 @@ export default function App() {
                 ))}
               </div>
               <div style={{ background: "#1e1e2e", borderRadius: 14, padding: 18, border: "1px solid #2d2d44" }}>
-                <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14 }}>🏆 Top mentions (90 jours)</div>
-                {[...people].sort((a, b) => b.mentions3m - a.mentions3m).slice(0, 8).map((m, i) => (
-                  <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 7 }}>
-                    <span style={{ fontSize: 10, color: "#6b6b8a", width: 14 }}>{i + 1}</span>
-                    <div style={{ width: 22, height: 22, borderRadius: "50%", background: "linear-gradient(135deg,#6366f1,#8b5cf6)", overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>
-                      {m.avatar ? <img src={m.avatar} style={{ width: 22, height: 22 }} alt="" /> : m.name[0]}
+                <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 14 }}>🏆 Top 5 — Réactions reçues (90j)</div>
+                {[...people].sort((a, b) => b.reactionsReceived - a.reactionsReceived).slice(0, 5).map((m, i) => {
+                  const maxR = Math.max(...people.map(p => p.reactionsReceived), 1);
+                  return (
+                    <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 9 }}>
+                      <span style={{ fontSize: 10, color: "#6b6b8a", width: 14 }}>{i + 1}</span>
+                      <div style={{ width: 26, height: 26, borderRadius: "50%", background: "linear-gradient(135deg,#f59e0b,#fb923c)", overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700 }}>
+                        {m.avatar ? <img src={m.avatar} style={{ width: 26, height: 26 }} alt="" /> : m.name[0]}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.name}</div>
+                        <Bar value={m.reactionsReceived} max={maxR} color="#fb923c" />
+                      </div>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "#fb923c" }}>{m.reactionsReceived}</span>
                     </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.name}</div>
-                      <Bar value={m.mentions3m} max={maxMentions} color="#6366f1" />
-                    </div>
-                    <span style={{ fontSize: 12, fontWeight: 700, color: "#a78bfa" }}>{m.mentions3m}</span>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
             <div style={{ background: "#1e1e2e", borderRadius: 14, padding: 18, border: "1px solid #2d2d44" }}>
