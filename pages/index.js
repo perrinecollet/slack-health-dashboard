@@ -47,15 +47,14 @@ function KpiCell({ value, label, color, active }) {
 }
 
 const PEOPLE_SORT = [
-  { key: "mentions3m",       label: "# Mentions",          color: "#a78bfa" },
-  { key: "msgSent",          label: "# Messages envoyés",  color: "#22d3ee" },
-  { key: "threadPct",        label: "% Thread (publics)",  color: "#f472b6" },
-  { key: "pubPct",           label: "% Public vs Private", color: "#22c55e" },
-  { key: "reactionsGiven",   label: "Réactions envoyées",  color: "#f59e0b" },
-  { key: "reactionsReceived",label: "Réactions reçues",    color: "#fb923c" },
+  { key: "mentions3m",        label: "# Mentions",          color: "#a78bfa" },
+  { key: "msgSent",           label: "# Messages envoyés",  color: "#22d3ee" },
+  { key: "threadPct",         label: "% Thread (publics)",  color: "#f472b6" },
+  { key: "pubPct",            label: "% Public vs Private", color: "#22c55e" },
+  { key: "reactionsGiven",    label: "Réactions envoyées",  color: "#f59e0b" },
+  { key: "reactionsReceived", label: "Réactions reçues",    color: "#fb923c" },
 ];
 
-// Sort arrow button
 function SortBtn({ label, sortKey, current, dir, onClick }) {
   const active = current === sortKey;
   return (
@@ -65,23 +64,26 @@ function SortBtn({ label, sortKey, current, dir, onClick }) {
   );
 }
 
+const ACTION_TABS = [
+  { id: "noncompliant", l: "⚠️ Non-compliant" },
+  { id: "dormant",      l: "💤 Dormants" },
+  { id: "temp",         l: "🕐 Temp" },
+  { id: "thread",       l: "🧵 % Thread" },
+  { id: "pubpriv",      l: "🔒 % Public/Privé" },
+];
+
 export default function App() {
   const [tab, setTab] = useState("overview");
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [actionLog, setActionLog] = useState([]);
+  const [actionTab, setActionTab] = useState("noncompliant");
 
-  // Channels state
-  const [chTab, setChTab] = useState("all"); // all | noncompliant | dormant | temp
+  const [chTab, setChTab] = useState("all");
   const [chSort, setChSort] = useState("lastActive");
   const [chDir, setChDir] = useState("desc");
-  const [ncOwnerFilter, setNcOwnerFilter] = useState("all");
-
-  // People state
   const [mbSort, setMbSort] = useState("mentions3m");
-
-  // Group DMs / User Groups
   const [expandedGdm, setExpandedGdm] = useState(null);
   const [expandedUg, setExpandedUg] = useState(null);
 
@@ -135,7 +137,7 @@ export default function App() {
     </div>
   );
 
-  const channels = (data?.channels || []).filter(c => !c.isPrivate); // public only
+  const channels = (data?.channels || []).filter(c => !c.isPrivate);
   const allChannelsRaw = data?.channels || [];
   const people = data?.people || [];
   const groupDms = data?.groupDms || [];
@@ -153,10 +155,8 @@ export default function App() {
   const maxGdm = Math.max(...groupDms.map(g => g.messages3m), 1);
   const maxUg = Math.max(...groups.map(g => g.mentions3m), 1);
 
-  // People lookup by id
   const peopleById = Object.fromEntries(people.map(p => [p.id, p]));
 
-  // ── Channel sorting helper
   const sortChannels = (list, key, dir) => {
     return [...list].sort((a, b) => {
       let av = a[key] ?? 0, bv = b[key] ?? 0;
@@ -173,21 +173,17 @@ export default function App() {
     else { setChSort(key); setChDir("desc"); }
   };
 
-  // ── Channel subsets
-  const pubChannels = channels; // already filtered to public
+  const pubChannels = channels;
   const nonCompliant = channels.filter(c => !isCompliant(c));
   const dormant = channels.filter(c => c.lastActive > 90 && !c.name.startsWith("temp"));
   const temp = channels.filter(c => c.name.startsWith("temp") && c.lastActive > 90);
+  const compliant = channels.filter(c => c.fullyCompliant || (isCompliant(c) && c.hasDesc));
 
   const getOwnerName = (ownerId) => {
     const p = peopleById[ownerId];
     return p ? (p.name || p.displayName) : (ownerId || "—");
   };
 
-  // Non-compliant: unique owners
-  const ncOwners = ["all", ...Array.from(new Set(nonCompliant.map(c => c.owner).filter(Boolean)))];
-
-  // Group non-compliant by owner
   const ncByOwner = {};
   nonCompliant.forEach(c => {
     const o = c.owner || "unknown";
@@ -195,17 +191,21 @@ export default function App() {
     ncByOwner[o].push(c);
   });
 
-  // ── Channel table columns config
+  // People with low thread %
+  const lowThread = [...people].filter(m => m.msgSent > 0 && (m.threadPct ?? 0) < 80).sort((a, b) => (a.threadPct ?? 0) - (b.threadPct ?? 0));
+  // People with low public %
+  const lowPub = [...people].filter(m => m.msgSent > 0 && (m.pubPct ?? 0) < 80).sort((a, b) => (a.pubPct ?? 0) - (b.pubPct ?? 0));
+
   const CH_COLS = [
-    { key: "name",       label: "Channel" },
-    { key: "owner",      label: "Owner" },
-    { key: "created",    label: "Créé le" },
-    { key: "threadRatio",label: "Thread rate" },
-    { key: "msgCount",   label: "Messages (200 derniers)" },
-    { key: "lastActive", label: "Dormant (j)" },
+    { key: "name",        label: "Channel" },
+    { key: "owner",       label: "Owner" },
+    { key: "created",     label: "Créé le" },
+    { key: "threadRatio", label: "Thread rate" },
+    { key: "msgCount",    label: "Messages (200 derniers)" },
+    { key: "lastActive",  label: "Dormant (j)" },
   ];
 
-  function ChannelTable({ list, extraCols = [], showCompliance = true, showDormant = true }) {
+  function ChannelTable({ list, showCompliance = true }) {
     const sorted = sortChannels(list, chSort, chDir);
     return (
       <div style={{ overflowX: "auto" }}>
@@ -258,8 +258,6 @@ export default function App() {
     { id: "actions",    l: "⚡ Actions" },
   ];
 
-  const compliant = channels.filter(c => c.fullyCompliant || (isCompliant(c) && c.hasDesc));
-
   const CH_TABS = [
     { id: "all",          l: `Tous (${pubChannels.length})` },
     { id: "compliant",    l: `✅ Compliant (${compliant.length})` },
@@ -267,6 +265,208 @@ export default function App() {
     { id: "dormant",      l: `😴 Dormants (${dormant.length})` },
     { id: "temp",         l: `🕐 Temp (${temp.length})` },
   ];
+
+  // ── Action sub-tab renderers ──
+
+  function ActionNonCompliant() {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ fontSize: 11, color: "#6b6b8a" }}>Un message personnalisé par owner, posté sur <strong style={{ color: "#a78bfa" }}>#help-slack</strong>.</div>
+        <button onClick={() => {
+          if (!helpSlackChannel) { addLog("❌ #help-slack introuvable"); return; }
+          Object.entries(ncByOwner).forEach(([ownerId, chs]) => {
+            const ownerName = getOwnerName(ownerId);
+            const list = chs.map(c => `• #${c.name} — ${[!c.namingOk && "naming ❌", !c.hasTopic && "topic manquant ❌", !c.hasDesc && "description manquante ❌"].filter(Boolean).join(", ")}`).join("\n");
+            doNotify(helpSlackChannel.id,
+              `⚠️ *Action requise — channels non-compliant*\n\nBonjour *${ownerName}*, vous êtes owner des channels suivants qui ne respectent pas les conventions Slack :\n\n${list}\n\n📖 Guide naming : https://www.notion.so/vizzia/Slack-Channels-Naming-2e745c4b899e80038d67d93760f29717\n\nMerci de corriger dès que possible 🙏`,
+              `notification owner ${ownerName}`
+            );
+          });
+        }} style={{ background: "linear-gradient(135deg,#dc2626,#b91c1c)", border: "none", borderRadius: 9, padding: "8px 18px", color: "#fff", fontWeight: 600, fontSize: 12, cursor: "pointer", alignSelf: "flex-start" }}>
+          📩 Envoyer à tous les owners ({Object.keys(ncByOwner).length})
+        </button>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {Object.entries(ncByOwner).map(([ownerId, chs]) => {
+            const ownerName = getOwnerName(ownerId);
+            return (
+              <div key={ownerId} style={{ background: "#13131f", borderRadius: 10, padding: "12px 14px", border: "1px solid #2d2d44" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
+                  <div style={{ fontWeight: 700, fontSize: 12 }}>👤 {ownerName}</div>
+                  <button onClick={() => {
+                    if (!helpSlackChannel) { addLog("❌ #help-slack introuvable"); return; }
+                    const list = chs.map(c => `• #${c.name} — ${[!c.namingOk && "naming ❌", !c.hasTopic && "topic manquant ❌", !c.hasDesc && "description manquante ❌"].filter(Boolean).join(", ")}`).join("\n");
+                    doNotify(helpSlackChannel.id,
+                      `⚠️ *Action requise — channels non-compliant*\n\nBonjour *${ownerName}*, vous êtes owner des channels suivants qui ne respectent pas les conventions Slack :\n\n${list}\n\n📖 Guide naming : https://www.notion.so/vizzia/Slack-Channels-Naming-2e745c4b899e80038d67d93760f29717\n\nMerci de corriger dès que possible 🙏`,
+                      `notification owner ${ownerName}`
+                    );
+                  }} style={{ background: "#450a0a", border: "1px solid #7f1d1d", borderRadius: 7, padding: "4px 12px", color: "#fca5a5", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                    📩 Notifier
+                  </button>
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  {chs.map(c => (
+                    <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      <span style={{ fontFamily: "monospace", fontSize: 11, color: "#a78bfa" }}>#{c.name}</span>
+                      <div style={{ display: "flex", gap: 3 }}>
+                        {!c.namingOk && <Badge ok={false} label="naming" />}
+                        {!c.hasTopic && <Badge ok={false} label="topic" />}
+                        {!c.hasDesc && <Badge ok={false} label="desc" />}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  function ActionDormant() {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ fontSize: 11, color: "#6b6b8a" }}>{dormant.length} channels inactifs depuis +90j (hors temp-).</div>
+        <div style={{ background: "#13131f", borderRadius: 10, border: "1px solid #2d2d44", overflow: "hidden" }}>
+          <div style={{ maxHeight: 200, overflowY: "auto" }}>
+            {dormant.map(c => (
+              <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, padding: "7px 14px", borderBottom: "1px solid #2d2d44" }}>
+                <span style={{ fontFamily: "monospace", color: "#a78bfa" }}>#{c.name}</span>
+                <span style={{ color: "#93c5fd" }}>{c.lastActive}j</span>
+              </div>
+            ))}
+          </div>
+        </div>
+        <button onClick={() => {
+          if (!helpSlackChannel) { addLog("❌ #help-slack introuvable"); return; }
+          const list = dormant.map(c => `• #${c.name} (inactif depuis ${c.lastActive}j)`).join("\n");
+          doNotify(helpSlackChannel.id, `💤 *Channels inactifs depuis +90 jours* — les owners sont invités à confirmer l'archivage :\n${list}`, "alerte dormants");
+        }} style={{ background: "linear-gradient(135deg,#1e40af,#1d4ed8)", border: "none", borderRadius: 9, padding: "8px 16px", color: "#fff", fontWeight: 600, fontSize: 12, cursor: "pointer", alignSelf: "flex-start" }}>
+          ⚠️ Envoyer alertes archivage sur #help-slack
+        </button>
+      </div>
+    );
+  }
+
+  function ActionTemp() {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ fontSize: 11, color: "#6b6b8a" }}>{tempDormant.length} channels <code style={{ color: "#a78bfa" }}>temp-</code> sans message depuis +90j.</div>
+        <div style={{ background: "#13131f", borderRadius: 10, border: "1px solid #2d2d44", overflow: "hidden" }}>
+          <div style={{ maxHeight: 200, overflowY: "auto" }}>
+            {tempDormant.map(c => (
+              <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, padding: "7px 14px", borderBottom: "1px solid #2d2d44" }}>
+                <span style={{ fontFamily: "monospace", color: "#a78bfa" }}>#{c.name}</span>
+                <span style={{ color: "#ef4444" }}>{c.lastActive}j</span>
+                <button onClick={() => doArchive(c.id, c.name)} style={{ background: "#450a0a", border: "1px solid #7f1d1d", borderRadius: 6, padding: "2px 8px", color: "#fca5a5", fontSize: 10, cursor: "pointer" }}>Archiver</button>
+              </div>
+            ))}
+          </div>
+        </div>
+        <button onClick={() => tempDormant.forEach(c => doArchive(c.id, c.name))} style={{ background: "linear-gradient(135deg,#92400e,#78350f)", border: "none", borderRadius: 9, padding: "8px 16px", color: "#fff", fontWeight: 600, fontSize: 12, cursor: "pointer", alignSelf: "flex-start" }}>
+          🗄️ Tout archiver ({tempDormant.length})
+        </button>
+      </div>
+    );
+  }
+
+  function ActionThread() {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ fontSize: 11, color: "#6b6b8a" }}>
+          <strong style={{ color: "#f472b6" }}>{lowThread.length} membres</strong> ont moins de 80% de leurs messages publics en thread. Un message d'encouragement sera posté sur <strong style={{ color: "#a78bfa" }}>#help-slack</strong>.
+        </div>
+        <button onClick={() => {
+          if (!helpSlackChannel) { addLog("❌ #help-slack introuvable"); return; }
+          const list = lowThread.map(m => `• ${m.name} — ${m.threadPct ?? 0}% de thread`).join("\n");
+          doNotify(helpSlackChannel.id,
+            `🧵 *Rappel — utilisation des threads*\n\nLes membres suivants ont un faible taux de réponse en thread sur les channels publics :\n\n${list}\n\n💡 Pensez à utiliser les threads pour garder les channels lisibles. Merci ! 🙏`,
+            "alerte thread"
+          );
+        }} style={{ background: "linear-gradient(135deg,#be185d,#9d174d)", border: "none", borderRadius: 9, padding: "8px 18px", color: "#fff", fontWeight: 600, fontSize: 12, cursor: "pointer", alignSelf: "flex-start" }}>
+          📩 Envoyer rappel thread ({lowThread.length} membres)
+        </button>
+        <div style={{ background: "#13131f", borderRadius: 10, border: "1px solid #2d2d44", overflow: "hidden" }}>
+          <div style={{ maxHeight: 300, overflowY: "auto" }}>
+            {lowThread.map(m => (
+              <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", borderBottom: "1px solid #2d2d44" }}>
+                <div style={{ width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg,#6366f1,#8b5cf6)", overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700 }}>
+                  {m.avatar ? <img src={m.avatar} style={{ width: 28, height: 28 }} alt="" /> : m.name[0]}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 12 }}>{m.name}</div>
+                  {m.title && <div style={{ fontSize: 10, color: "#6b6b8a" }}>{m.title}</div>}
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: sc(m.threadPct ?? 0) }}>{m.threadPct ?? 0}%</div>
+                  <div style={{ fontSize: 9, color: "#6b6b8a" }}>thread pub</div>
+                </div>
+                <button onClick={() => {
+                  if (!helpSlackChannel) { addLog("❌ #help-slack introuvable"); return; }
+                  doNotify(helpSlackChannel.id,
+                    `🧵 *Rappel thread pour ${m.name}*\n\nBonjour *${m.name}*, votre taux d'utilisation des threads sur les channels publics est de *${m.threadPct ?? 0}%*.\n\n💡 Pensez à répondre en thread pour garder les channels lisibles. Merci 🙏`,
+                    `rappel thread ${m.name}`
+                  );
+                }} style={{ background: "#1a0a2e", border: "1px solid #4c1d95", borderRadius: 7, padding: "4px 10px", color: "#c4b5fd", fontSize: 10, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}>
+                  📩 Notifier
+                </button>
+              </div>
+            ))}
+            {lowThread.length === 0 && <div style={{ textAlign: "center", padding: 32, color: "#6b6b8a", fontSize: 12 }}>Tous les membres sont au-dessus de 80% ✅</div>}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function ActionPubPriv() {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <div style={{ fontSize: 11, color: "#6b6b8a" }}>
+          <strong style={{ color: "#22c55e" }}>{lowPub.length} membres</strong> ont moins de 80% de leurs messages dans des channels publics. Un rappel sera posté sur <strong style={{ color: "#a78bfa" }}>#help-slack</strong>.
+        </div>
+        <button onClick={() => {
+          if (!helpSlackChannel) { addLog("❌ #help-slack introuvable"); return; }
+          const list = lowPub.map(m => `• ${m.name} — ${m.pubPct ?? 0}% public`).join("\n");
+          doNotify(helpSlackChannel.id,
+            `🔒 *Rappel — transparence des échanges*\n\nLes membres suivants ont une majorité de messages dans des channels privés :\n\n${list}\n\n💡 Favorisez les channels publics pour améliorer la visibilité et la collaboration. Merci ! 🙏`,
+            "alerte public/privé"
+          );
+        }} style={{ background: "linear-gradient(135deg,#065f46,#047857)", border: "none", borderRadius: 9, padding: "8px 18px", color: "#fff", fontWeight: 600, fontSize: 12, cursor: "pointer", alignSelf: "flex-start" }}>
+          📩 Envoyer rappel transparence ({lowPub.length} membres)
+        </button>
+        <div style={{ background: "#13131f", borderRadius: 10, border: "1px solid #2d2d44", overflow: "hidden" }}>
+          <div style={{ maxHeight: 300, overflowY: "auto" }}>
+            {lowPub.map(m => (
+              <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", borderBottom: "1px solid #2d2d44" }}>
+                <div style={{ width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg,#6366f1,#8b5cf6)", overflow: "hidden", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700 }}>
+                  {m.avatar ? <img src={m.avatar} style={{ width: 28, height: 28 }} alt="" /> : m.name[0]}
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 700, fontSize: 12 }}>{m.name}</div>
+                  {m.title && <div style={{ fontSize: 10, color: "#6b6b8a" }}>{m.title}</div>}
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: sc(m.pubPct ?? 0) }}>{m.pubPct ?? 0}%</div>
+                  <div style={{ fontSize: 9, color: "#6b6b8a" }}>public</div>
+                </div>
+                <button onClick={() => {
+                  if (!helpSlackChannel) { addLog("❌ #help-slack introuvable"); return; }
+                  doNotify(helpSlackChannel.id,
+                    `🔒 *Rappel transparence pour ${m.name}*\n\nBonjour *${m.name}*, seulement *${m.pubPct ?? 0}%* de vos messages sont postés dans des channels publics.\n\n💡 Favorisez les channels publics pour améliorer la visibilité et la collaboration. Merci 🙏`,
+                    `rappel pub/priv ${m.name}`
+                  );
+                }} style={{ background: "#052e16", border: "1px solid #166534", borderRadius: 7, padding: "4px 10px", color: "#4ade80", fontSize: 10, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}>
+                  📩 Notifier
+                </button>
+              </div>
+            ))}
+            {lowPub.length === 0 && <div style={{ textAlign: "center", padding: 32, color: "#6b6b8a", fontSize: 12 }}>Tous les membres sont au-dessus de 80% ✅</div>}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -348,6 +548,8 @@ export default function App() {
                 {tempDormant.length > 0 && <div style={{ background: "#3f1a00", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "#fdba74" }}>🗄️ <strong>{tempDormant.length}</strong> channels temp- inactifs depuis +90j</div>}
                 {dormant.length > 0 && <div style={{ background: "#1e2a3a", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "#93c5fd" }}>💤 <strong>{dormant.length}</strong> autres channels dormants</div>}
                 {groupDms.filter(g => g.messages3m >= 50).length > 0 && <div style={{ background: "#1a1a3a", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "#c4b5fd" }}>💬 <strong>{groupDms.filter(g => g.messages3m >= 50).length}</strong> group DMs très actifs → suggérer un channel</div>}
+                {lowThread.length > 0 && <div style={{ background: "#2d0a2e", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "#f0abfc" }}>🧵 <strong>{lowThread.length}</strong> membres avec moins de 80% de thread</div>}
+                {lowPub.length > 0 && <div style={{ background: "#052e16", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "#86efac" }}>🔒 <strong>{lowPub.length}</strong> membres avec moins de 80% de messages publics</div>}
               </div>
             </div>
           </div>
@@ -356,7 +558,6 @@ export default function App() {
         {/* ── CHANNELS ── */}
         {tab === "channels" && (
           <div>
-            {/* Channel sub-tabs */}
             <div style={{ display: "flex", gap: 4, marginBottom: 16, background: "#13131f", borderRadius: 10, padding: 4, flexWrap: "wrap" }}>
               {CH_TABS.map(t => (
                 <button key={t.id} onClick={() => setChTab(t.id)} style={{ background: chTab === t.id ? "#4f46e5" : "transparent", border: "none", borderRadius: 7, padding: "6px 12px", color: chTab === t.id ? "#fff" : "#a0a0bf", fontWeight: 600, fontSize: 11, cursor: "pointer" }}>
@@ -364,23 +565,12 @@ export default function App() {
                 </button>
               ))}
             </div>
-
             <div style={{ background: "#1e1e2e", borderRadius: 14, border: "1px solid #2d2d44", overflow: "hidden" }}>
-
-              {/* ALL */}
-              {chTab === "all" && <ChannelTable list={pubChannels} showCompliance={true} />}
-
-              {/* COMPLIANT */}
-              {chTab === "compliant" && <ChannelTable list={compliant} showCompliance={true} />}
-
-              {/* NON-COMPLIANT */}
-              {chTab === "noncompliant" && <ChannelTable list={nonCompliant} showCompliance={true} />}
-
-              {/* DORMANT */}
-              {chTab === "dormant" && <ChannelTable list={dormant} showCompliance={true} />}
-
-              {/* TEMP */}
-              {chTab === "temp" && <ChannelTable list={temp} showCompliance={true} />}
+              {chTab === "all" && <ChannelTable list={pubChannels} />}
+              {chTab === "compliant" && <ChannelTable list={compliant} />}
+              {chTab === "noncompliant" && <ChannelTable list={nonCompliant} />}
+              {chTab === "dormant" && <ChannelTable list={dormant} />}
+              {chTab === "temp" && <ChannelTable list={temp} />}
             </div>
           </div>
         )}
@@ -417,12 +607,12 @@ export default function App() {
                       {m.title && <div style={{ fontSize: 10, color: "#6b6b8a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{m.title}</div>}
                     </div>
                   </div>
-                  <KpiCell value={m.mentions3m}           label="mentions"      color="#a78bfa" active={mbSort === "mentions3m"} />
-                  <KpiCell value={m.msgSent}              label="messages"      color="#22d3ee" active={mbSort === "msgSent"} />
-                  <KpiCell value={`${m.threadPct ?? 0}%`} label="thread pub"    color="#f472b6" active={mbSort === "threadPct"} />
-                  <KpiCell value={`${m.pubPct}%`}         label="pub ratio"     color="#22c55e" active={mbSort === "pubPct"} />
-                  <KpiCell value={m.reactionsGiven}       label="réac. données" color="#f59e0b" active={mbSort === "reactionsGiven"} />
-                  <KpiCell value={m.reactionsReceived}    label="réac. reçues"  color="#fb923c" active={mbSort === "reactionsReceived"} />
+                  <KpiCell value={m.mentions3m}            label="mentions"      color="#a78bfa" active={mbSort === "mentions3m"} />
+                  <KpiCell value={m.msgSent}               label="messages"      color="#22d3ee" active={mbSort === "msgSent"} />
+                  <KpiCell value={`${m.threadPct ?? 0}%`}  label="thread pub"    color="#f472b6" active={mbSort === "threadPct"} />
+                  <KpiCell value={`${m.pubPct}%`}          label="pub ratio"     color="#22c55e" active={mbSort === "pubPct"} />
+                  <KpiCell value={m.reactionsGiven}        label="réac. données" color="#f59e0b" active={mbSort === "reactionsGiven"} />
+                  <KpiCell value={m.reactionsReceived}     label="réac. reçues"  color="#fb923c" active={mbSort === "reactionsReceived"} />
                 </div>
               ))}
             </div>
@@ -528,101 +718,21 @@ export default function App() {
         {/* ── ACTIONS ── */}
         {tab === "actions" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-
-            {/* Non-compliant — par owner */}
-            <div style={{ background: "#1e1e2e", borderRadius: 14, padding: 18, border: "1px solid #2d2d44" }}>
-              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>⚠️ Notifier les owners — channels non-compliant</div>
-              <div style={{ fontSize: 11, color: "#6b6b8a", marginBottom: 14 }}>Un message personnalisé par owner, posté sur <strong style={{ color: "#a78bfa" }}>#help-slack</strong>.</div>
-
-              {/* Send all button */}
-              <button onClick={() => {
-                if (!helpSlackChannel) { addLog("❌ #help-slack introuvable"); return; }
-                Object.entries(ncByOwner).forEach(([ownerId, chs]) => {
-                  const ownerName = getOwnerName(ownerId);
-                  const list = chs.map(c => `• #${c.name} — ${[!c.namingOk && "naming ❌", !c.hasTopic && "topic manquant ❌", !c.hasDesc && "description manquante ❌"].filter(Boolean).join(", ")}`).join("\n");
-                  doNotify(helpSlackChannel.id,
-                    `⚠️ *Action requise — channels non-compliant*\n\nBonjour *${ownerName}*, vous êtes owner des channels suivants qui ne respectent pas les conventions Slack :\n\n${list}\n\n📖 Guide naming : https://www.notion.so/vizzia/Slack-Channels-Naming-2e745c4b899e80038d67d93760f29717\n\nMerci de corriger dès que possible 🙏`,
-                    `notification owner ${ownerName}`
-                  );
-                });
-              }} style={{ background: "linear-gradient(135deg,#dc2626,#b91c1c)", border: "none", borderRadius: 9, padding: "8px 18px", color: "#fff", fontWeight: 600, fontSize: 12, cursor: "pointer", marginBottom: 14 }}>
-                📩 Envoyer à tous les owners ({Object.keys(ncByOwner).length})
-              </button>
-
-              {/* Per-owner cards */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {Object.entries(ncByOwner).map(([ownerId, chs]) => {
-                  const ownerName = getOwnerName(ownerId);
-                  return (
-                    <div key={ownerId} style={{ background: "#13131f", borderRadius: 10, padding: "12px 14px", border: "1px solid #2d2d44" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8, flexWrap: "wrap", gap: 8 }}>
-                        <div style={{ fontWeight: 700, fontSize: 12, color: "#e2e2f0" }}>👤 {ownerName}</div>
-                        <button onClick={() => {
-                          if (!helpSlackChannel) { addLog("❌ #help-slack introuvable"); return; }
-                          const list = chs.map(c => `• #${c.name} — ${[!c.namingOk && "naming ❌", !c.hasTopic && "topic manquant ❌", !c.hasDesc && "description manquante ❌"].filter(Boolean).join(", ")}`).join("\n");
-                          doNotify(helpSlackChannel.id,
-                            `⚠️ *Action requise — channels non-compliant*\n\nBonjour *${ownerName}*, vous êtes owner des channels suivants qui ne respectent pas les conventions Slack :\n\n${list}\n\n📖 Guide naming : https://www.notion.so/vizzia/Slack-Channels-Naming-2e745c4b899e80038d67d93760f29717\n\nMerci de corriger dès que possible 🙏`,
-                            `notification owner ${ownerName}`
-                          );
-                        }} style={{ background: "#450a0a", border: "1px solid #7f1d1d", borderRadius: 7, padding: "4px 12px", color: "#fca5a5", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
-                          📩 Notifier
-                        </button>
-                      </div>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                        {chs.map(c => (
-                          <div key={c.id} style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                            <span style={{ fontFamily: "monospace", fontSize: 11, color: "#a78bfa" }}>#{c.name}</span>
-                            <div style={{ display: "flex", gap: 3 }}>
-                              {!c.namingOk && <Badge ok={false} label="naming" />}
-                              {!c.hasTopic && <Badge ok={false} label="topic" />}
-                              {!c.hasDesc && <Badge ok={false} label="desc" />}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+            {/* Action sub-tabs */}
+            <div style={{ display: "flex", gap: 4, background: "#13131f", borderRadius: 10, padding: 4, flexWrap: "wrap" }}>
+              {ACTION_TABS.map(t => (
+                <button key={t.id} onClick={() => setActionTab(t.id)} style={{ background: actionTab === t.id ? "#4f46e5" : "transparent", border: "none", borderRadius: 7, padding: "6px 14px", color: actionTab === t.id ? "#fff" : "#a0a0bf", fontWeight: 600, fontSize: 11, cursor: "pointer" }}>
+                  {t.l}
+                </button>
+              ))}
             </div>
 
-            {/* Temp dormant */}
             <div style={{ background: "#1e1e2e", borderRadius: 14, padding: 18, border: "1px solid #2d2d44" }}>
-              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>🗄️ Archiver les channels <code style={{ color: "#a78bfa" }}>temp-</code> inactifs</div>
-              <div style={{ fontSize: 11, color: "#6b6b8a", marginBottom: 12 }}>{tempDormant.length} channels sans message depuis +90j.</div>
-              <div style={{ maxHeight: 140, overflowY: "auto", marginBottom: 12 }}>
-                {tempDormant.map(c => (
-                  <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 11, padding: "4px 0", borderBottom: "1px solid #2d2d44" }}>
-                    <span style={{ fontFamily: "monospace", fontSize: 10 }}>#{c.name}</span>
-                    <span style={{ color: "#ef4444" }}>{c.lastActive}j</span>
-                    <button onClick={() => doArchive(c.id, c.name)} style={{ background: "#450a0a", border: "1px solid #7f1d1d", borderRadius: 6, padding: "2px 8px", color: "#fca5a5", fontSize: 10, cursor: "pointer" }}>Archiver</button>
-                  </div>
-                ))}
-              </div>
-              <button onClick={() => tempDormant.forEach(c => doArchive(c.id, c.name))} style={{ background: "linear-gradient(135deg,#92400e,#78350f)", border: "none", borderRadius: 9, padding: "8px 16px", color: "#fff", fontWeight: 600, fontSize: 12, cursor: "pointer" }}>
-                🗄️ Tout archiver ({tempDormant.length})
-              </button>
-            </div>
-
-            {/* Dormant notify */}
-            <div style={{ background: "#1e1e2e", borderRadius: 14, padding: 18, border: "1px solid #2d2d44" }}>
-              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>💤 Alerter les owners — channels dormants</div>
-              <div style={{ fontSize: 11, color: "#6b6b8a", marginBottom: 12 }}>{dormant.length} channels inactifs (hors temp-).</div>
-              <div style={{ maxHeight: 140, overflowY: "auto", marginBottom: 12 }}>
-                {dormant.map(c => (
-                  <div key={c.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 11, padding: "4px 0", borderBottom: "1px solid #2d2d44" }}>
-                    <span style={{ fontFamily: "monospace", fontSize: 10 }}>#{c.name}</span>
-                    <span style={{ color: "#93c5fd" }}>{c.lastActive}j</span>
-                  </div>
-                ))}
-              </div>
-              <button onClick={() => {
-                if (!helpSlackChannel) { addLog("❌ #help-slack introuvable"); return; }
-                const list = dormant.map(c => `• #${c.name} (inactif depuis ${c.lastActive}j)`).join("\n");
-                doNotify(helpSlackChannel.id, `💤 *Channels inactifs depuis +90 jours* — les owners sont invités à confirmer l'archivage :\n${list}`, "alerte dormants");
-              }} style={{ background: "linear-gradient(135deg,#1e40af,#1d4ed8)", border: "none", borderRadius: 9, padding: "8px 16px", color: "#fff", fontWeight: 600, fontSize: 12, cursor: "pointer" }}>
-                ⚠️ Envoyer alertes archivage
-              </button>
+              {actionTab === "noncompliant" && <ActionNonCompliant />}
+              {actionTab === "dormant"      && <ActionDormant />}
+              {actionTab === "temp"         && <ActionTemp />}
+              {actionTab === "thread"       && <ActionThread />}
+              {actionTab === "pubpriv"      && <ActionPubPriv />}
             </div>
 
             {/* Log */}
