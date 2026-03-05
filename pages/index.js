@@ -256,8 +256,7 @@ export default function App() {
     { id: "people",     l: `👥 People (${people.length})` },
     { id: "groupdms",   l: `💬 Group DMs (${groupDms.length})` },
     { id: "usergroups", l: `🏷️ User Groups (${groups.length})` },
-    { id: "actions",      l: "⚡ Actions" },
-    { id: "bestpractices", l: "📚 Best Practices" },
+    { id: "actions",    l: "⚡ Actions" },
   ];
 
   const CH_TABS = [
@@ -552,6 +551,50 @@ export default function App() {
                 {groupDms.filter(g => g.messages3m >= 50).length > 0 && <div style={{ background: "#1a1a3a", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "#c4b5fd" }}>💬 <strong>{groupDms.filter(g => g.messages3m >= 50).length}</strong> group DMs très actifs → suggérer un channel</div>}
                 {lowThread.length > 0 && <div style={{ background: "#2d0a2e", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "#f0abfc" }}>🧵 <strong>{lowThread.length}</strong> membres avec moins de 80% de thread</div>}
                 {lowPub.length > 0 && <div style={{ background: "#052e16", borderRadius: 8, padding: "8px 12px", fontSize: 12, color: "#86efac" }}>🔒 <strong>{lowPub.length}</strong> membres avec moins de 80% de messages publics</div>}
+              </div>
+            </div>
+
+            {/* Golden Rules */}
+            <div style={{ fontWeight: 700, fontSize: 13, color: "#a0a0bf", marginTop: 6 }}>✨ 6 Golden Rules</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
+              {[
+                { icon: "🧵", accent: "#7c3aed", title: "Reply in threads", lines: ["Keeps the main channel readable", "1 post = 1 topic"] },
+                { icon: "📋", accent: "#d97706", title: "Name channels clearly", lines: ["Follow naming conventions", "Add a clear topic + description"] },
+                { icon: "✅", accent: "#16a34a", title: "React, don't reply", lines: ["Use emoji reactions for quick acknowledgements", "Reduce noise"] },
+                { icon: "💬", accent: "#2563eb", title: "Default to channels", lines: ["Keep knowledge visible and searchable", "Use DMs for private only"] },
+                { icon: "🔔", accent: "#ea580c", title: "Manage notifications wisely", lines: ["Tag for emergencies only", "Follow only key channels"] },
+                { icon: "📌", accent: "#e11d48", title: "Pin key messages", lines: ["Highlight important decisions,", "resources or links for easy access"] },
+              ].map(bp => (
+                <div key={bp.title} style={{ background: "#1e1e2e", borderRadius: 12, padding: "14px 16px", border: "1px solid #2d2d44", borderTop: `3px solid ${bp.accent}` }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 8 }}>
+                    <div style={{ width: 30, height: 30, borderRadius: 8, background: bp.accent + "30", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, flexShrink: 0 }}>{bp.icon}</div>
+                    <div style={{ fontWeight: 700, fontSize: 12, color: "#e2e2f0" }}>{bp.title}</div>
+                  </div>
+                  {bp.lines.map((l, i) => <div key={i} style={{ fontSize: 11, color: "#a0a0bf", lineHeight: 1.5 }}>{l}</div>)}
+                </div>
+              ))}
+            </div>
+
+            {/* Resources */}
+            <div style={{ background: "#1e1e2e", borderRadius: 14, padding: 18, border: "1px solid #2d2d44" }}>
+              <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 12 }}>🔗 Ressources</div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {[
+                  { icon: "🎓", label: "Formation Slack", sub: "How to use Slack — Training", url: "https://www.notion.so/vizzia/How-to-use-Slack-Training-31245c4b899e8098b764c3c811cece02" },
+                  { icon: "📖", label: "Playbook Slack", sub: "How to use Slack — Playbook", url: "https://www.notion.so/vizzia/How-to-use-Slack-Playbook-31245c4b899e804990f8ccd3d8c036c7" },
+                  { icon: "🏷️", label: "Naming Convention", sub: "Conventions de nommage des channels", url: "https://www.notion.so/vizzia/Slack-Channels-Naming-2e745c4b899e80038d67d93760f29717" },
+                ].map(r => (
+                  <a key={r.url} href={r.url} target="_blank" rel="noreferrer" style={{ display: "flex", alignItems: "center", gap: 12, background: "#13131f", borderRadius: 10, padding: "11px 14px", border: "1px solid #2d2d44", textDecoration: "none" }}
+                    onMouseEnter={e => e.currentTarget.style.borderColor = "#6366f1"}
+                    onMouseLeave={e => e.currentTarget.style.borderColor = "#2d2d44"}>
+                    <div style={{ fontSize: 22, flexShrink: 0 }}>{r.icon}</div>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 12, color: "#e2e2f0" }}>{r.label}</div>
+                      <div style={{ fontSize: 11, color: "#6b6b8a", marginTop: 1 }}>{r.sub}</div>
+                    </div>
+                    <div style={{ marginLeft: "auto", fontSize: 14, color: "#6366f1" }}>↗</div>
+                  </a>
+                ))}
               </div>
             </div>
           </div>
